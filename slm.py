@@ -919,6 +919,90 @@ Include:
                     st.rerun()
         with col3:
             st.caption("💡 Review the live preview above before proceeding")
+    
+    else:
+        # All content generated
+        st.success("🎉 All content generated successfully!")
+        
+        # Final statistics
+        st.markdown("---")
+        st.markdown("### 📊 Document Statistics")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📄 Total Sections", total)
+        with col2:
+            total_words = sum(len(c.split()) for c in st.session_state.content.values())
+            st.metric("📝 Total Words", f"{total_words:,}")
+        with col3:
+            total_chars = sum(len(c) for c in st.session_state.content.values())
+            pages_estimate = total_chars / 3000  # ~3000 chars per page
+            st.metric("📖 Est. Pages", f"{pages_estimate:.0f}")
+        with col4:
+            fig_count = len(set(re.findall(r'\[\[FIGURE\s+(\d+):', ' '.join(st.session_state.content.values()), re.IGNORECASE)))
+            st.metric("🖼️ Figures", fig_count)
+        
+        st.markdown("---")
+        
+        # Show figure prompts
+        fig_nums = set()
+        fig_descs = {}
+        for content in st.session_state.content.values():
+            figs = re.findall(r'\[\[FIGURE\s+(\d+):\s*(.*?)\]\]', content, re.IGNORECASE)
+            for num, desc in figs:
+                num = int(num)
+                fig_nums.add(num)
+                if num not in fig_descs:
+                    fig_descs[num] = desc
+        
+        if fig_nums:
+            with st.expander(f"🎨 Image Generation Prompts ({len(fig_nums)} figures)", expanded=True):
+                st.markdown("### Copy these prompts to generate images with AI tools")
+                for num in sorted(fig_nums):
+                    desc = fig_descs.get(num, "")
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        st.markdown(f"**Figure {num}**")
+                    with col2:
+                        prompt = f"Professional academic diagram for business textbook: {desc}. Style: clean, minimalist, educational, high contrast, clear labels, white background, vector-style."
+                        st.code(prompt, language="text")
+        
+        st.markdown("---")
+        
+        # Quick content review section
+        with st.expander("📝 Quick Content Review - Edit Any Section", expanded=False):
+            for unit in st.session_state.approved_outline:
+                st.markdown(f"### UNIT {unit['unit_number']}: {unit['unit_title']}")
+                for section in unit.get('sections', []):
+                    sec_key = f"{section['section_number']} {section['section_title']}"
+                    if sec_key in st.session_state.content:
+                        with st.expander(f"Edit: {sec_key}"):
+                            edited = st.text_area(
+                                "Content:",
+                                st.session_state.content[sec_key],
+                                height=300,
+                                key=f"final_edit_{sec_key}"
+                            )
+                            if st.button(f"💾 Update {sec_key}", key=f"update_{sec_key}"):
+                                st.session_state.content[sec_key] = edited
+                                st.success("✅ Updated!")
+        
+        st.markdown("---")
+        
+        # Navigation
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("🖼️ Add Images & Compile PDF", type="primary", use_container_width=True):
+                st.session_state.step = "image_upload"
+                st.rerun()
+        with col2:
+            if st.button("← Back to Outline", use_container_width=True):
+                if st.checkbox("⚠️ Discard all content?"):
+                    del st.session_state.content
+                    st.session_state.step = "outline_generation"
+                    st.rerun()
+        with col3:
+            st.caption("💡 Review the live preview above before proceeding")
         current = st.session_state.sections_to_process[completed]
         section_key = f"{current['section_number']} {current['section_title']}"
         
