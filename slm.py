@@ -799,7 +799,9 @@ Include:
                     # Auto-continue after 2 seconds
                     time.sleep(2)
                     st.rerun()
+                    
                 else:
+                    # Content generation failed
                     st.error(f"❌ Failed to generate: {section_key} (Attempt {attempt_count + 1}/3)")
                     
                     col1, col2, col3 = st.columns(3)
