@@ -550,8 +550,8 @@ def show_outline_page():
                 st.rerun()
 
 def show_content_generation_page():
-    """Step 3: Content Generation."""
-    st.header("Step 3: Content Generation")
+    """Step 3: Content Generation with LIVE PREVIEW."""
+    st.header("Step 3: Content Generation with Live Preview")
     
     if 'approved_outline' not in st.session_state:
         st.error("No outline found")
@@ -576,14 +576,266 @@ def show_content_generation_page():
     total = len(st.session_state.sections_to_process)
     completed = len(st.session_state.content)
     
-    # Overall Progress
-    st.progress(completed / total if total > 0 else 0, text=f"Overall Progress: {completed}/{total} sections")
+    # ===== LIVE PREVIEW SECTION =====
+    st.markdown("---")
+    st.markdown("### 📖 LIVE DOCUMENT PREVIEW (Updates in Real-Time)")
+    st.caption("👇 This is how your PDF will look. Content appears here as it's generated.")
     
-    # Create placeholder for real-time updates
-    status_placeholder = st.empty()
-    content_preview_placeholder = st.empty()
+    # Create a scrollable preview container
+    preview_container = st.container()
     
+    with preview_container:
+        # Show document title
+        st.markdown(f"# 🎓 {st.session_state.get('course_title', 'Course Title')}")
+        st.markdown(f"**For:** {st.session_state.get('target_audience', 'Students')}")
+        st.markdown("---")
+        
+        # Show generated content so far
+        if st.session_state.content:
+            for unit in st.session_state.approved_outline:
+                unit_has_content = False
+                
+                # Check if this unit has any content
+                for section in unit.get('sections', []):
+                    sec_key = f"{section['section_number']} {section['section_title']}"
+                    if sec_key in st.session_state.content:
+                        unit_has_content = True
+                        break
+                
+                # Only show unit if it has content
+                if unit_has_content:
+                    st.markdown(f"## UNIT {unit['unit_number']}: {unit['unit_title']}")
+                    st.markdown("---")
+                    
+                    for section in unit.get('sections', []):
+                        sec_key = f"{section['section_number']} {section['section_title']}"
+                        
+                        if sec_key in st.session_state.content:
+                            # Show section header
+                            st.markdown(f"### {sec_key}")
+                            
+                            # Show content with proper formatting
+                            content = st.session_state.content[sec_key]
+                            
+                            # Format Check Your Progress boxes
+                            if "CHECK YOUR PROGRESS" in content.upper():
+                                parts = re.split(r'---\s*CHECK YOUR PROGRESS\s*---', content, flags=re.IGNORECASE)
+                                if len(parts) > 1:
+                                    st.markdown(parts[0])
+                                    st.info("**📝 CHECK YOUR PROGRESS**\n\n" + parts[1].replace('---', '').strip())
+                            else:
+                                st.markdown(content)
+                            
+                            # Show figure placeholders
+                            figures = re.findall(r'\[\[FIGURE\s+(\d+):\s*(.*?)\]\]', content, re.IGNORECASE)
+                            for fig_num, fig_desc in figures:
+                                st.image("https://via.placeholder.com/600x400/cccccc/000000?text=Figure+" + fig_num, 
+                                        caption=f"Figure {fig_num}: {fig_desc}", 
+                                        use_container_width=True)
+                            
+                            st.markdown("---")
+        
+        # Show what's being generated now
+        if completed < total:
+            current = st.session_state.sections_to_process[completed]
+            st.markdown(f"### ⏳ {current['section_number']} {current['section_title']}")
+            st.info("🤖 Currently generating...")
+    
+    st.markdown("---")
+    
+    # ===== GENERATION CONTROL SECTION =====
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("✅ Completed", f"{completed}/{total}")
+    with col2:
+        st.metric("⏳ Remaining", f"{total - completed}")
+    with col3:
+        progress_pct = (completed / total * 100) if total > 0 else 0
+        st.metric("📊 Progress", f"{progress_pct:.1f}%")
+    
+    st.progress(completed / total if total > 0 else 0)
+    
+    # ===== AUTO-GENERATION SECTION =====
     if completed < total:
+        current = st.session_state.sections_to_process[completed]
+        section_key = f"{current['section_number']} {current['section_title']}"
+        
+        st.markdown("---")
+        st.markdown(f"### 🤖 Now Generating: {section_key}")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info(f"**Unit:** {current['unit_title']}\n\n**Topics:** {current['description']}")
+        with col2:
+            # Manual controls
+            if st.button("⏸️ Pause & Review", use_container_width=True):
+                st.session_state.paused = True
+                st.info("⏸️ Paused. Review content above before continuing.")
+                st.stop()
+        
+        # Check if paused
+        if not st.session_state.get('paused', False):
+            with st.spinner(f"✍️ AI is writing '{current['section_title']}'... (30-60 seconds)"):
+                # Generate content
+                system_prompt = """You are an expert academic content writer for MBA programs. 
+
+**CRITICAL FORMATTING RULES:**
+1. Use clear paragraph breaks (double newline)
+2. Use bullet points with asterisks (*) for lists
+3. Use numbering (1., 2., 3.) for sequential points
+4. Include figure placeholders as: [[FIGURE X: description]]
+5. For Check Your Progress: Format exactly as:
+   --- CHECK YOUR PROGRESS ---
+   1. Question one?
+   2. Question two?
+   ---
+
+Write comprehensive, professional academic content."""
+                
+                user_prompt = f"""**Section:** {section_key}
+**Unit:** {current['unit_title']}
+**Topics to Cover:** {current['description']}
+**Audience:** {st.session_state.get('target_audience', 'MBA students')}
+
+Write 500-700 words of detailed academic content. Include:
+- Clear introduction
+- Well-explained concepts with examples
+- Proper academic tone
+- If content section: Add "Check Your Progress" with 2-3 questions
+- If suitable: Add [[FIGURE X: description]] placeholders for diagrams"""
+                
+                messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+                content = make_api_call(messages)
+                
+                if content:
+                    st.session_state.content[section_key] = content
+                    st.success(f"✅ Completed: {section_key}")
+                    
+                    # Show preview of what was just generated
+                    with st.expander("📄 Just Generated - Review Now", expanded=True):
+                        st.markdown(f"#### {section_key}")
+                        st.markdown(content)
+                        st.caption(f"📊 {len(content.split())} words | {len(content)} characters")
+                        
+                        # Quick edit option
+                        if st.checkbox(f"✏️ Edit this section before continuing", key=f"quick_edit_{section_key}"):
+                            edited = st.text_area("Edit content:", content, height=300, key=f"edit_now_{section_key}")
+                            if st.button("💾 Save Changes", key=f"save_{section_key}"):
+                                st.session_state.content[section_key] = edited
+                                st.success("Saved!")
+                                time.sleep(1)
+                                st.rerun()
+                    
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error(f"❌ Failed to generate: {section_key}")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        if st.button("🔄 Retry", use_container_width=True):
+                            st.rerun()
+                    with col2:
+                        if st.button("✏️ Write Manually", use_container_width=True):
+                            manual_content = st.text_area("Write content manually:", height=400)
+                            if st.button("💾 Save Manual Content"):
+                                st.session_state.content[section_key] = manual_content
+                                st.success("Saved!")
+                                st.rerun()
+                    with col3:
+                        if st.button("⏭️ Skip", use_container_width=True):
+                            st.session_state.content[section_key] = f"[Skipped - {section_key}]\n\nPlease add content manually."
+                            st.rerun()
+        else:
+            # Paused state
+            st.warning("⏸️ Generation Paused - Review the content above")
+            if st.button("▶️ Continue Generation", type="primary", use_container_width=True):
+                st.session_state.paused = False
+                st.rerun()
+    
+    else:
+        # All content generated
+        st.success("🎉 All content generated successfully!")
+        
+        # Final statistics
+        st.markdown("---")
+        st.markdown("### 📊 Document Statistics")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📄 Total Sections", total)
+        with col2:
+            total_words = sum(len(c.split()) for c in st.session_state.content.values())
+            st.metric("📝 Total Words", f"{total_words:,}")
+        with col3:
+            total_chars = sum(len(c) for c in st.session_state.content.values())
+            pages_estimate = total_chars / 3000  # ~3000 chars per page
+            st.metric("📖 Est. Pages", f"{pages_estimate:.0f}")
+        with col4:
+            fig_count = len(set(re.findall(r'\[\[FIGURE\s+(\d+):', ' '.join(st.session_state.content.values()), re.IGNORECASE)))
+            st.metric("🖼️ Figures", fig_count)
+        
+        st.markdown("---")
+        
+        # Show figure prompts
+        fig_nums = set()
+        fig_descs = {}
+        for content in st.session_state.content.values():
+            figs = re.findall(r'\[\[FIGURE\s+(\d+):\s*(.*?)\]\]', content, re.IGNORECASE)
+            for num, desc in figs:
+                num = int(num)
+                fig_nums.add(num)
+                if num not in fig_descs:
+                    fig_descs[num] = desc
+        
+        if fig_nums:
+            with st.expander(f"🎨 Image Generation Prompts ({len(fig_nums)} figures)", expanded=True):
+                st.markdown("### Copy these prompts to generate images with AI tools")
+                for num in sorted(fig_nums):
+                    desc = fig_descs.get(num, "")
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        st.markdown(f"**Figure {num}**")
+                    with col2:
+                        prompt = f"Professional academic diagram for business textbook: {desc}. Style: clean, minimalist, educational, high contrast, clear labels, white background, vector-style."
+                        st.code(prompt, language="text")
+        
+        st.markdown("---")
+        
+        # Quick content review section
+        with st.expander("📝 Quick Content Review - Edit Any Section", expanded=False):
+            for unit in st.session_state.approved_outline:
+                st.markdown(f"### UNIT {unit['unit_number']}: {unit['unit_title']}")
+                for section in unit.get('sections', []):
+                    sec_key = f"{section['section_number']} {section['section_title']}"
+                    if sec_key in st.session_state.content:
+                        with st.expander(f"Edit: {sec_key}"):
+                            edited = st.text_area(
+                                "Content:",
+                                st.session_state.content[sec_key],
+                                height=300,
+                                key=f"final_edit_{sec_key}"
+                            )
+                            if st.button(f"💾 Update {sec_key}", key=f"update_{sec_key}"):
+                                st.session_state.content[sec_key] = edited
+                                st.success("✅ Updated!")
+        
+        st.markdown("---")
+        
+        # Navigation
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("🖼️ Add Images & Compile PDF", type="primary", use_container_width=True):
+                st.session_state.step = "image_upload"
+                st.rerun()
+        with col2:
+            if st.button("← Back to Outline", use_container_width=True):
+                if st.checkbox("⚠️ Discard all content?"):
+                    del st.session_state.content
+                    st.session_state.step = "outline_generation"
+                    st.rerun()
+        with col3:
+            st.caption("💡 Review the live preview above before proceeding")
         current = st.session_state.sections_to_process[completed]
         section_key = f"{current['section_number']} {current['section_title']}"
         
