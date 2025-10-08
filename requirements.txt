@@ -1,0 +1,15 @@
+
+streamlit>=1.28.0
+requests>=2.31.0
+pandas>=2.0.0
+
+# PDF Generation (using subprocess to call pandoc/pdflatex - no Python package needed)
+# Note: You must install these system tools separately:
+# - Pandoc: https://pandoc.org/installing.html
+# - LaTeX (MiKTeX/MacTeX/texlive): For pdflatex command
+
+# Optional: If you want to use pypandoc as Python wrapper
+# pypandoc>=1.11
+
+# The current implementation uses subprocess to call pdflatex directly
+# This requires LaTeX distribution to be installed on your system
