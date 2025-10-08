@@ -106,28 +106,98 @@ def get_api_headers():
     }
 
 def make_api_call(messages, retries=3, delay=5):
-    """Makes API call with retry logic."""
+    """Makes API call with retry logic and multiple model fallback."""
     headers = get_api_headers()
-    payload = {
-        "messages": messages,
-        "model": "grok-4-latest",
-        "stream": False,
-        "temperature": 0.3
-    }
     
-    for attempt in range(retries):
-        try:
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=300)
-            response.raise_for_status()
-            return response.json()['choices'][0]['message']['content']
-        except requests.exceptions.Timeout:
-            st.warning(f"Request timed out (Attempt {attempt + 1}/{retries}). Retrying...")
-            time.sleep(delay)
-        except requests.exceptions.RequestException as e:
-            st.warning(f"API call failed (Attempt {attempt + 1}/{retries}): {e}")
-            time.sleep(delay)
+    # Try multiple model versions in order of likelihood
+    models_to_try = [
+        "grok-beta",
+        "grok-2-1212", 
+        "grok-2-latest",
+        "grok-1"
+    ]
     
-    st.error("API call failed after retries. Check your API key.")
+    last_error = None
+    
+    for model_name in models_to_try:
+        payload = {
+            "messages": messages,
+            "model": model_name,
+            "stream": False,
+            "temperature": 0.3
+        }
+        
+        for attempt in range(retries):
+            try:
+                response = requests.post(API_URL, headers=headers, json=payload, timeout=300)
+                response.raise_for_status()
+                # Success! Show which model worked
+                if attempt == 0:
+                    st.info(f"✅ Connected using model: {model_name}")
+                return response.json()['choices'][0]['message']['content']
+                
+            except requests.exceptions.HTTPError as e:
+                last_error = str(e)
+                if e.response.status_code == 403:
+                    # Try next model
+                    st.warning(f"⚠️ Model '{model_name}' forbidden (attempt {attempt+1}/{retries}), trying next model...")
+                    break
+                elif e.response.status_code == 401:
+                    st.error("❌ Invalid API Key! Please check your key at https://console.x.ai/")
+                    return None
+                else:
+                    st.warning(f"HTTP {e.response.status_code} with {model_name} (attempt {attempt+1}/{retries})")
+                    time.sleep(delay)
+                    
+            except requests.exceptions.Timeout:
+                st.warning(f"⏱️ Timeout with {model_name} (attempt {attempt+1}/{retries})")
+                time.sleep(delay)
+                
+            except Exception as e:
+                last_error = str(e)
+                st.warning(f"⚠️ Error with {model_name}: {e}")
+                time.sleep(delay)
+    
+    # All models failed
+    st.error("❌ **API Connection Failed**")
+    st.error(f"Last error: {last_error}")
+    
+    with st.expander("🔧 Troubleshooting Guide"):
+        st.markdown("""
+        ### Common Issues:
+        
+        1. **Invalid API Key**
+           - Go to https://console.x.ai/
+           - Generate a NEW API key
+           - Copy it carefully (no spaces)
+           - Paste in the API Key field above
+        
+        2. **Account Issues**
+           - Check if your X.AI account is active
+           - Verify you have API credits
+           - Some accounts need verification
+        
+        3. **Model Access**
+           - Your API key may not have access to Grok models
+           - Try requesting access at https://x.ai/api
+        
+        4. **Rate Limiting**
+           - Wait 5-10 minutes
+           - Try again with a fresh API key
+        
+        5. **Test Your Key Manually:**
+        ```bash
+        curl https://api.x.ai/v1/chat/completions \\
+          -H "Content-Type: application/json" \\
+          -H "Authorization: Bearer YOUR_API_KEY" \\
+          -d '{
+            "messages": [{"role": "user", "content": "test"}],
+            "model": "grok-beta",
+            "stream": false
+          }'
+        ```
+        """)
+    
     return None
 
 def escape_latex(text):
@@ -267,19 +337,83 @@ def show_configuration_page():
     col1, col2 = st.columns([3, 1])
     with col1:
         api_key = st.text_input("Grok API Key", value=st.session_state.get('api_key', DEFAULT_API_KEY),
-                                type="password", key="api_key_input")
+                                type="password", key="api_key_input",
+                                help="Get your API key from https://console.x.ai/")
         st.session_state.api_key = api_key
+        
+        # Show API key status
+        if api_key:
+            if api_key.startswith('xai-') and len(api_key) > 20:
+                st.success("✅ API key format looks valid")
+            else:
+                st.warning("⚠️ API key format may be incorrect. Should start with 'xai-'")
+        
     with col2:
         if st.button("Test API", use_container_width=True):
-            with st.spinner("Testing..."):
-                resp = make_api_call([{"role": "user", "content": "Say 'API working'"}])
+            with st.spinner("Testing API..."):
+                # Simple test call
+                test_messages = [{"role": "user", "content": "Reply with: OK"}]
+                resp = make_api_call(test_messages)
                 if resp:
-                    st.success("API working!")
+                    st.success("✅ API Working!")
+                    st.balloons()
                 else:
-                    st.error("API test failed")
+                    st.error("❌ API Test Failed")
     
     st.divider()
     st.subheader("Course Details")
+    
+    # Add API diagnostics
+    with st.expander("🔍 API Diagnostics", expanded=False):
+        st.markdown("**Current API Configuration:**")
+        st.code(f"URL: {API_URL}\nModel: Trying multiple models (grok-beta, grok-2-1212, etc.)")
+        
+        if st.button("🔬 Detailed API Test"):
+            api_key = st.session_state.get('api_key', DEFAULT_API_KEY)
+            st.info(f"Testing with API key: {api_key[:10]}...{api_key[-4:]}")
+            
+            # Test with minimal payload
+            test_headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            test_payload = {
+                "messages": [{"role": "user", "content": "Hi"}],
+                "model": "grok-beta",
+                "stream": False,
+                "temperature": 0
+            }
+            
+            try:
+                response = requests.post(API_URL, headers=test_headers, json=test_payload, timeout=30)
+                st.write(f"**Status Code:** {response.status_code}")
+                st.write(f"**Response Headers:**")
+                st.json(dict(response.headers))
+                
+                if response.status_code == 200:
+                    st.success("✅ API is working correctly!")
+                    st.json(response.json())
+                else:
+                    st.error(f"❌ Error: {response.status_code}")
+                    st.code(response.text)
+                    
+                    if response.status_code == 403:
+                        st.warning("""
+                        **403 Forbidden - Possible Causes:**
+                        1. ❌ Invalid API key
+                        2. ❌ API key expired
+                        3. ❌ Account has no credits
+                        4. ❌ Model access restricted
+                        
+                        **Solutions:**
+                        - Generate a new API key at https://console.x.ai/
+                        - Check your account balance
+                        - Verify API key permissions
+                        """)
+            except Exception as e:
+                st.error(f"Request failed: {e}")
+    
+    st.divider()
     
     st.text_input("Course Title", "Organisational Behaviour: Concept, Nature & Historical Perspectives", key="course_title")
     st.selectbox("Target Audience", ["Postgraduate (MBA)", "University Undergraduate", "Professional Development"], key="target_audience")
@@ -395,70 +529,187 @@ def show_content_generation_page():
     total = len(st.session_state.sections_to_process)
     completed = len(st.session_state.content)
     
-    st.progress(completed / total if total > 0 else 0, text=f"Progress: {completed}/{total}")
+    # Overall Progress
+    st.progress(completed / total if total > 0 else 0, text=f"Overall Progress: {completed}/{total} sections")
+    
+    # Create placeholder for real-time updates
+    status_placeholder = st.empty()
+    content_preview_placeholder = st.empty()
     
     if completed < total:
         current = st.session_state.sections_to_process[completed]
         section_key = f"{current['section_number']} {current['section_title']}"
         
-        st.subheader(f"Generating: {section_key}")
+        # Show current section being generated
+        status_placeholder.info(f"🤖 **Currently Generating:** Unit {current['unit_number']} - {section_key}")
         
-        with st.spinner("Writing content..."):
-            system_prompt = "You are an academic content developer for MBA programs. Write comprehensive, rigorous content for ONE section. Include figure placeholders as [[FIGURE X: description]] where appropriate."
+        # Show what's being generated in real-time
+        with content_preview_placeholder.container():
+            st.markdown("### 📝 Generation Preview")
+            st.caption(f"**Unit:** {current['unit_title']}")
+            st.caption(f"**Section:** {section_key}")
+            st.caption(f"**Description:** {current['description']}")
             
-            user_prompt = f"Section: {section_key}\nDescription: {current['description']}\nWrite 400-600 words of academic content."
+            # Create a progress indicator
+            with st.spinner("✍️ AI is writing content... This may take 30-60 seconds"):
+                
+                # Show a simulated progress for better UX
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                for i in range(100):
+                    progress_bar.progress(i + 1)
+                    if i < 20:
+                        status_text.text("📖 Analyzing section requirements...")
+                    elif i < 40:
+                        status_text.text("💭 Structuring content framework...")
+                    elif i < 60:
+                        status_text.text("✍️ Writing main content...")
+                    elif i < 80:
+                        status_text.text("🔍 Adding examples and details...")
+                    else:
+                        status_text.text("✅ Finalizing section...")
+                    time.sleep(0.03)  # Small delay for visual effect
+        
+        # Generate content
+        system_prompt = """You are an expert academic content developer for MBA programs. Write comprehensive, rigorous content for ONE section. 
+
+IMPORTANT: Include figure placeholders where diagrams would enhance understanding, formatted as: [[FIGURE X: description]]
+
+Structure your content professionally with:
+- Clear paragraphs
+- Bullet points for lists
+- Academic tone
+- Real-world examples
+- If applicable, a "Check Your Progress" section with questions"""
+        
+        user_prompt = f"""**Section to Write:** {section_key}
+**Unit Context:** {current['unit_title']}
+**Key Topics to Cover:** {current['description']}
+**Target Audience:** {st.session_state.get('target_audience', 'MBA students')}
+
+Write 400-600 words of comprehensive academic content. Be detailed and thorough."""
+        
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+        content = make_api_call(messages)
+        
+        if content:
+            st.session_state.content[section_key] = content
             
-            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-            content = make_api_call(messages)
+            # Show success with the generated content
+            status_placeholder.success(f"✅ **Completed:** {section_key}")
             
-            if content:
-                st.session_state.content[section_key] = content
-                st.success(f"Completed!")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("Generation failed")
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Retry"):
-                        st.rerun()
-                with col2:
-                    if st.button("Skip"):
-                        st.session_state.content[section_key] = "[Failed]"
-                        st.rerun()
+            with content_preview_placeholder.container():
+                st.markdown("### ✅ Generated Content Preview")
+                with st.expander(f"View: {section_key}", expanded=True):
+                    st.markdown(content[:500] + "..." if len(content) > 500 else content)
+                    st.caption(f"Total length: {len(content)} characters (~{len(content.split())} words)")
+            
+            time.sleep(2)  # Brief pause to show the result
+            st.rerun()
+        else:
+            status_placeholder.error(f"❌ **Failed:** {section_key}")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("🔄 Retry This Section", use_container_width=True):
+                    st.rerun()
+            with col2:
+                if st.button("⏭️ Skip This Section", use_container_width=True):
+                    st.session_state.content[section_key] = "[Content generation failed - please edit manually]"
+                    st.rerun()
+            with col3:
+                if st.button("🛑 Stop Generation", use_container_width=True):
+                    st.session_state.step = "content_review"
+                    st.rerun()
+    
     else:
-        st.success("All content generated!")
+        status_placeholder.success("🎉 **All content generated successfully!**")
         
-        # Show figure prompts
+        # Show completion statistics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Sections", total)
+        with col2:
+            total_words = sum(len(c.split()) for c in st.session_state.content.values())
+            st.metric("Total Words", f"{total_words:,}")
+        with col3:
+            total_chars = sum(len(c) for c in st.session_state.content.values())
+            st.metric("Total Characters", f"{total_chars:,}")
+        with col4:
+            # Extract figure count
+            fig_count = len(set(re.findall(r'\[\[FIGURE\s+(\d+):', ' '.join(st.session_state.content.values()), re.IGNORECASE)))
+            st.metric("Figures Detected", fig_count)
+        
+        st.divider()
+        
+        # Show figure prompts if any
         fig_nums = set()
+        fig_descs = {}
         for content in st.session_state.content.values():
-            figs = re.findall(r'\[\[FIGURE\s+(\d+):', content, re.IGNORECASE)
-            fig_nums.update(int(f) for f in figs)
+            figs = re.findall(r'\[\[FIGURE\s+(\d+):\s*(.*?)\]\]', content, re.IGNORECASE)
+            for num, desc in figs:
+                num = int(num)
+                fig_nums.add(num)
+                if num not in fig_descs:
+                    fig_descs[num] = desc
         
         if fig_nums:
-            with st.expander("Image Generation Prompts", expanded=True):
+            st.success(f"🖼️ **{len(fig_nums)} figures detected in content**")
+            with st.expander("📋 View Figure Prompts for Image Generation", expanded=True):
+                st.markdown("### 🎨 Image Generation Prompts")
+                st.caption("Use these prompts with AI image generators (DALL-E, Midjourney, Stable Diffusion)")
+                
                 for num in sorted(fig_nums):
-                    for content in st.session_state.content.values():
-                        match = re.search(rf'\[\[FIGURE\s+{num}:\s*(.*?)\]\]', content, re.IGNORECASE)
-                        if match:
-                            st.markdown(f"**Figure {num}:**")
-                            prompt = f"Professional academic diagram: {match.group(1)}. Style: clean, professional, educational."
-                            st.code(prompt)
-                            break
+                    desc = fig_descs.get(num, "No description")
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        st.markdown(f"**Figure {num}:**")
+                    with col2:
+                        prompt = f"Professional academic diagram for business textbook: {desc}. Style: clean, professional, educational, high contrast, clear labels."
+                        st.code(prompt, language="text")
         
-        # Show content
+        st.divider()
+        
+        # Show all content with live preview
+        st.markdown("### 📚 Review & Edit Generated Content")
+        st.info("💡 Expand each unit below to review and edit the content before proceeding to PDF compilation")
+        
         for unit in st.session_state.approved_outline:
-            with st.expander(f"UNIT {unit['unit_number']}: {unit['unit_title']}", expanded=False):
+            with st.expander(f"📖 UNIT {unit['unit_number']}: {unit['unit_title']}", expanded=False):
                 for section in unit.get('sections', []):
                     sec_key = f"{section['section_number']} {section['section_title']}"
                     if sec_key in st.session_state.content:
-                        edited = st.text_area(sec_key, st.session_state.content[sec_key], height=200, key=f"edit_{sec_key}")
+                        st.markdown(f"#### {sec_key}")
+                        
+                        # Show word count
+                        word_count = len(st.session_state.content[sec_key].split())
+                        st.caption(f"📊 {word_count} words | {len(st.session_state.content[sec_key])} characters")
+                        
+                        # Editable content
+                        edited = st.text_area(
+                            f"Edit content for {sec_key}",
+                            st.session_state.content[sec_key],
+                            height=300,
+                            key=f"edit_{sec_key}",
+                            label_visibility="collapsed"
+                        )
                         st.session_state.content[sec_key] = edited
+                        st.divider()
         
         st.divider()
-        if st.button("Proceed to Image Upload", type="primary"):
-            st.session_state.step = "image_upload"
-            st.rerun()
+        
+        # Navigation buttons
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("📄 Proceed to Image Upload", type="primary", use_container_width=True):
+                st.session_state.step = "image_upload"
+                st.rerun()
+        with col2:
+            if st.button("← Back to Outline", use_container_width=True):
+                st.session_state.step = "outline_generation"
+                st.rerun()
+        with col3:
+            st.caption("💡 Tip: Review and edit content before adding images")
 
 def show_image_upload_page():
     """Step 3.5: Image Upload."""
