@@ -550,7 +550,7 @@ def show_outline_page():
                 st.rerun()
 
 def show_content_generation_page():
-    """Step 3: Content Generation with LIVE PREVIEW."""
+    """Step 3: Content Generation with LIVE PREVIEW and ANTI-LOOP protection."""
     st.header("Step 3: Content Generation with Live Preview")
     
     if 'approved_outline' not in st.session_state:
@@ -560,9 +560,12 @@ def show_content_generation_page():
             st.rerun()
         return
     
+    # Initialize content generation state
     if 'content' not in st.session_state:
         st.session_state.content = {}
         st.session_state.sections_to_process = []
+        st.session_state.generation_attempts = {}  # Track retry attempts
+        
         for unit in st.session_state.approved_outline:
             for section in unit.get('sections', []):
                 st.session_state.sections_to_process.append({
@@ -573,8 +576,18 @@ def show_content_generation_page():
                     'description': section.get('description', '')
                 })
     
+    # ANTI-LOOP PROTECTION: Check for stuck generation
     total = len(st.session_state.sections_to_process)
     completed = len(st.session_state.content)
+    
+    # Debug info - can be hidden in production
+    with st.expander("🔍 Debug Info", expanded=False):
+        st.write(f"**Total sections to generate:** {total}")
+        st.write(f"**Sections completed:** {completed}")
+        st.write(f"**Content keys stored:** {list(st.session_state.content.keys())}")
+        st.write(f"**Next section index:** {completed}")
+        if completed < total:
+            st.write(f"**Next section to generate:** {st.session_state.sections_to_process[completed]}")
     
     # ===== LIVE PREVIEW SECTION =====
     st.markdown("---")
@@ -644,7 +657,7 @@ def show_content_generation_page():
     st.markdown("---")
     
     # ===== GENERATION CONTROL SECTION =====
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("✅ Completed", f"{completed}/{total}")
     with col2:
@@ -652,6 +665,10 @@ def show_content_generation_page():
     with col3:
         progress_pct = (completed / total * 100) if total > 0 else 0
         st.metric("📊 Progress", f"{progress_pct:.1f}%")
+    with col4:
+        # Show if there are any retry attempts
+        retry_count = sum(1 for v in st.session_state.get('generation_attempts', {}).values() if v > 0)
+        st.metric("🔄 Retries", retry_count)
     
     st.progress(completed / total if total > 0 else 0)
     
@@ -660,8 +677,38 @@ def show_content_generation_page():
         current = st.session_state.sections_to_process[completed]
         section_key = f"{current['section_number']} {current['section_title']}"
         
+        # ANTI-LOOP: Check if we've already tried this section too many times
+        attempt_count = st.session_state.generation_attempts.get(section_key, 0)
+        
+        if attempt_count >= 3:
+            st.error(f"⚠️ **Failed to generate '{section_key}' after 3 attempts.**")
+            st.warning("This section will be marked for manual editing.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✏️ Write Manually Now", use_container_width=True):
+                    manual_content = st.text_area("Write content manually:", height=400, key=f"manual_{section_key}")
+                    if st.button("💾 Save & Continue"):
+                        st.session_state.content[section_key] = manual_content
+                        st.session_state.generation_attempts[section_key] = 0
+                        st.success("Saved! Continuing...")
+                        time.sleep(1)
+                        st.rerun()
+            with col2:
+                if st.button("⏭️ Skip & Add Placeholder", use_container_width=True):
+                    st.session_state.content[section_key] = f"[MANUAL EDIT REQUIRED]\n\n**Section:** {section_key}\n**Topics to cover:** {current['description']}\n\nPlease add content for this section before finalizing the document."
+                    st.session_state.generation_attempts[section_key] = 0
+                    st.warning("Skipped. You can edit this later.")
+                    time.sleep(1)
+                    st.rerun()
+            st.stop()
+        
         st.markdown("---")
         st.markdown(f"### 🤖 Now Generating: {section_key}")
+        
+        # Show attempt number if > 0
+        if attempt_count > 0:
+            st.warning(f"⚠️ This is attempt #{attempt_count + 1} for this section")
         
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -675,9 +722,12 @@ def show_content_generation_page():
         
         # Check if paused
         if not st.session_state.get('paused', False):
+            # CRITICAL: Increment attempt counter BEFORE calling API
+            st.session_state.generation_attempts[section_key] = attempt_count + 1
+            
             with st.spinner(f"✍️ AI is writing '{current['section_title']}'... (30-60 seconds)"):
                 # Generate content
-                system_prompt = """You are an expert academic content writer for MBA programs. 
+                system_prompt = f"""You are an expert academic content writer for MBA programs. 
 
 **CRITICAL FORMATTING RULES:**
 1. Use clear paragraph breaks (double newline)
@@ -690,15 +740,23 @@ def show_content_generation_page():
    2. Question two?
    ---
 
-Write comprehensive, professional academic content."""
+**IMPORTANT:** You are writing section "{section_key}" ONLY. Do not write other sections.
+
+Write comprehensive, professional academic content for THIS SPECIFIC SECTION ONLY."""
                 
-                user_prompt = f"""**Section:** {section_key}
-**Unit:** {current['unit_title']}
-**Topics to Cover:** {current['description']}
+                user_prompt = f"""**YOU MUST WRITE THIS SECTION ONLY:** {section_key}
+**Unit Context:** {current['unit_title']}
+**Specific Topics for THIS Section:** {current['description']}
 **Audience:** {st.session_state.get('target_audience', 'MBA students')}
 
-Write 500-700 words of detailed academic content. Include:
-- Clear introduction
+Write 500-700 words ONLY for the section titled "{current['section_title']}".
+
+DO NOT write content for other sections.
+DO NOT repeat previous sections.
+ONLY write content for: {section_key}
+
+Include:
+- Clear introduction to THIS section's topic
 - Well-explained concepts with examples
 - Proper academic tone
 - If content section: Add "Check Your Progress" with 2-3 questions
@@ -708,8 +766,19 @@ Write 500-700 words of detailed academic content. Include:
                 content = make_api_call(messages)
                 
                 if content:
+                    # CRITICAL: Save content immediately
                     st.session_state.content[section_key] = content
+                    
+                    # CRITICAL: Reset attempt counter on success
+                    st.session_state.generation_attempts[section_key] = 0
+                    
+                    # Verify it was saved
+                    if section_key not in st.session_state.content:
+                        st.error("❌ CRITICAL: Content was not saved properly!")
+                        st.stop()
+                    
                     st.success(f"✅ Completed: {section_key}")
+                    st.success(f"✅ Content saved! ({len(st.session_state.content)} sections completed)")
                     
                     # Show preview of what was just generated
                     with st.expander("📄 Just Generated - Review Now", expanded=True):
@@ -720,38 +789,52 @@ Write 500-700 words of detailed academic content. Include:
                         # Quick edit option
                         if st.checkbox(f"✏️ Edit this section before continuing", key=f"quick_edit_{section_key}"):
                             edited = st.text_area("Edit content:", content, height=300, key=f"edit_now_{section_key}")
-                            if st.button("💾 Save Changes", key=f"save_{section_key}"):
+                            if st.button("💾 Save Changes & Continue", key=f"save_{section_key}"):
                                 st.session_state.content[section_key] = edited
                                 st.success("Saved!")
                                 time.sleep(1)
                                 st.rerun()
+                            st.stop()  # Don't auto-continue if editing
                     
-                    time.sleep(1)
+                    # Auto-continue after 2 seconds
+                    time.sleep(2)
                     st.rerun()
                 else:
-                    st.error(f"❌ Failed to generate: {section_key}")
+                    st.error(f"❌ Failed to generate: {section_key} (Attempt {attempt_count + 1}/3)")
                     
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        if st.button("🔄 Retry", use_container_width=True):
+                        if st.button("🔄 Retry Now", use_container_width=True):
                             st.rerun()
                     with col2:
                         if st.button("✏️ Write Manually", use_container_width=True):
-                            manual_content = st.text_area("Write content manually:", height=400)
-                            if st.button("💾 Save Manual Content"):
-                                st.session_state.content[section_key] = manual_content
-                                st.success("Saved!")
-                                st.rerun()
-                    with col3:
-                        if st.button("⏭️ Skip", use_container_width=True):
-                            st.session_state.content[section_key] = f"[Skipped - {section_key}]\n\nPlease add content manually."
+                            st.session_state.paused = True
                             st.rerun()
+                    with col3:
+                        if st.button("⏭️ Skip This", use_container_width=True):
+                            st.session_state.content[section_key] = f"[Skipped - {section_key}]\n\nPlease add content manually."
+                            st.session_state.generation_attempts[section_key] = 0
+                            st.rerun()
+                    st.stop()
         else:
             # Paused state
             st.warning("⏸️ Generation Paused - Review the content above")
-            if st.button("▶️ Continue Generation", type="primary", use_container_width=True):
-                st.session_state.paused = False
-                st.rerun()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶️ Continue Generation", type="primary", use_container_width=True):
+                    st.session_state.paused = False
+                    st.rerun()
+            with col2:
+                if st.button("✏️ Write Current Section Manually", use_container_width=True):
+                    manual_content = st.text_area(f"Write content for {section_key}:", height=400, key=f"paused_manual_{section_key}")
+                    if st.button("💾 Save & Continue"):
+                        st.session_state.content[section_key] = manual_content
+                        st.session_state.paused = False
+                        st.session_state.generation_attempts[section_key] = 0
+                        st.success("Saved!")
+                        time.sleep(1)
+                        st.rerun()
     
     else:
         # All content generated
