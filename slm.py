@@ -109,13 +109,19 @@ def make_api_call(messages, retries=3, delay=5):
     """Makes API call with retry logic and multiple model fallback."""
     headers = get_api_headers()
     
-    # Try multiple model versions in order of likelihood
-    models_to_try = [
-        "grok-beta",
-        "grok-2-1212", 
-        "grok-2-latest",
-        "grok-1"
-    ]
+    # Check if user specified a custom model
+    if st.session_state.get('custom_model') and st.session_state.get('custom_model', '').strip():
+        models_to_try = [st.session_state.custom_model]
+        st.info(f"🎯 Using your custom model: {st.session_state.custom_model}")
+    else:
+        # Updated model names based on X.AI documentation
+        models_to_try = [
+            "grok-2-1212",        # Grok 2 (December 2024)
+            "grok-2-latest",      # Latest Grok 2
+            "grok-2",             # Grok 2 base
+            "grok-beta",          # Beta version
+            "grok-1",             # Grok 1
+        ]
     
     last_error = None
     
@@ -133,20 +139,32 @@ def make_api_call(messages, retries=3, delay=5):
                 response.raise_for_status()
                 # Success! Show which model worked
                 if attempt == 0:
-                    st.info(f"✅ Connected using model: {model_name}")
+                    st.success(f"✅ Connected successfully using: **{model_name}**")
                 return response.json()['choices'][0]['message']['content']
                 
             except requests.exceptions.HTTPError as e:
-                last_error = str(e)
-                if e.response.status_code == 403:
-                    # Try next model
-                    st.warning(f"⚠️ Model '{model_name}' forbidden (attempt {attempt+1}/{retries}), trying next model...")
+                last_error = f"{e.response.status_code}: {e.response.text if hasattr(e.response, 'text') else str(e)}"
+                
+                if e.response.status_code == 404:
+                    # Model not found, try next one
+                    if attempt == 0:  # Only show on first attempt for each model
+                        st.warning(f"⚠️ Model '{model_name}' not found (404), trying next model...")
+                    break  # Move to next model immediately
+                    
+                elif e.response.status_code == 403:
+                    st.warning(f"⚠️ Access forbidden for '{model_name}', trying next model...")
                     break
+                    
                 elif e.response.status_code == 401:
                     st.error("❌ Invalid API Key! Please check your key at https://console.x.ai/")
                     return None
+                    
+                elif e.response.status_code == 429:
+                    st.warning(f"⏳ Rate limit hit, waiting {delay} seconds...")
+                    time.sleep(delay)
+                    
                 else:
-                    st.warning(f"HTTP {e.response.status_code} with {model_name} (attempt {attempt+1}/{retries})")
+                    st.warning(f"⚠️ HTTP {e.response.status_code} with {model_name} (attempt {attempt+1}/{retries})")
                     time.sleep(delay)
                     
             except requests.exceptions.Timeout:
@@ -159,43 +177,42 @@ def make_api_call(messages, retries=3, delay=5):
                 time.sleep(delay)
     
     # All models failed
-    st.error("❌ **API Connection Failed**")
+    st.error("❌ **API Connection Failed - All Models Unavailable**")
     st.error(f"Last error: {last_error}")
     
-    with st.expander("🔧 Troubleshooting Guide"):
+    with st.expander("🔧 Troubleshooting Guide", expanded=True):
         st.markdown("""
-        ### Common Issues:
+        ### ✅ Your API Key is Valid!
         
-        1. **Invalid API Key**
-           - Go to https://console.x.ai/
-           - Generate a NEW API key
-           - Copy it carefully (no spaces)
-           - Paste in the API Key field above
+        The 404 error means your API key works, but the model names are incorrect.
         
-        2. **Account Issues**
-           - Check if your X.AI account is active
-           - Verify you have API credits
-           - Some accounts need verification
+        ### 🔍 Find Your Available Models:
         
-        3. **Model Access**
-           - Your API key may not have access to Grok models
-           - Try requesting access at https://x.ai/api
+        **Option 1: Check X.AI Documentation**
+        - Visit: https://docs.x.ai/docs/models
+        - Find the correct model name for your account
         
-        4. **Rate Limiting**
-           - Wait 5-10 minutes
-           - Try again with a fresh API key
-        
-        5. **Test Your Key Manually:**
+        **Option 2: Test with curl**
         ```bash
-        curl https://api.x.ai/v1/chat/completions \\
-          -H "Content-Type: application/json" \\
-          -H "Authorization: Bearer YOUR_API_KEY" \\
-          -d '{
-            "messages": [{"role": "user", "content": "test"}],
-            "model": "grok-beta",
-            "stream": false
-          }'
+        curl https://api.x.ai/v1/models \\
+          -H "Authorization: Bearer YOUR_API_KEY"
         ```
+        
+        **Option 3: Common Model Names**
+        Try these model names manually:
+        - `grok-2-1212`
+        - `grok-2-latest`
+        - `grok-vision-beta`
+        - `grok-beta`
+        
+        ### 📝 How to Add a Custom Model:
+        
+        If you find a working model name, let me know and I'll add it!
+        
+        ### 🆘 Need Help?
+        - X.AI Support: https://x.ai/support
+        - API Status: https://status.x.ai/
+        - Documentation: https://docs.x.ai/
         """)
     
     return None
@@ -334,6 +351,19 @@ def show_configuration_page():
     st.header("Step 1: Configure Your Course")
     
     st.subheader("API Configuration")
+    
+    # Manual model selection option
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        use_custom_model = st.checkbox("🔧 Use Custom Model Name", 
+                                       help="If you know your exact model name, enter it here")
+    with col2:
+        if use_custom_model:
+            custom_model = st.text_input("Model Name", 
+                                        value=st.session_state.get('custom_model', 'grok-2-1212'),
+                                        help="e.g., grok-2-1212, grok-vision-beta")
+            st.session_state.custom_model = custom_model
+    
     col1, col2 = st.columns([3, 1])
     with col1:
         api_key = st.text_input("Grok API Key", value=st.session_state.get('api_key', DEFAULT_API_KEY),
@@ -351,14 +381,31 @@ def show_configuration_page():
     with col2:
         if st.button("Test API", use_container_width=True):
             with st.spinner("Testing API..."):
-                # Simple test call
-                test_messages = [{"role": "user", "content": "Reply with: OK"}]
-                resp = make_api_call(test_messages)
-                if resp:
-                    st.success("✅ API Working!")
-                    st.balloons()
+                # Use custom model if specified
+                if use_custom_model and st.session_state.get('custom_model'):
+                    # Test with specific model
+                    test_headers = get_api_headers()
+                    test_payload = {
+                        "messages": [{"role": "user", "content": "Say: Working"}],
+                        "model": st.session_state.custom_model,
+                        "stream": False
+                    }
+                    try:
+                        resp = requests.post(API_URL, headers=test_headers, json=test_payload, timeout=30)
+                        resp.raise_for_status()
+                        st.success(f"✅ Model '{st.session_state.custom_model}' working!")
+                        st.balloons()
+                    except Exception as e:
+                        st.error(f"❌ Model test failed: {e}")
                 else:
-                    st.error("❌ API Test Failed")
+                    # Test with automatic model selection
+                    test_messages = [{"role": "user", "content": "Reply with: OK"}]
+                    resp = make_api_call(test_messages)
+                    if resp:
+                        st.success("✅ API Working!")
+                        st.balloons()
+                    else:
+                        st.error("❌ API Test Failed")
     
     st.divider()
     st.subheader("Course Details")
