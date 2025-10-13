@@ -2,6 +2,8 @@ reportlab
 streamlit>=1.28.0
 requests>=2.31.0
 pandas>=2.0.0
+pillow>=10.0.0
+svglib>=1.5.1
 
 # PDF Generation (using subprocess to call pandoc/pdflatex - no Python package needed)
 # Note: You must install these system tools separately:
