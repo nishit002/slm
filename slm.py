@@ -1341,14 +1341,77 @@ def show_content_generation_page():
                 st.rerun()
 
 def show_compilation_page():
-    """PDF compilation and Google Drive upload page"""
-    st.header("📄 Step 5: Compile & Upload PDFs")
-    
-    if 'content' not in st.session_state or not st.session_state.content:
-        st.error("❌ No content found")
-        if st.button("← Back", key="back_no_content"):
-            st.session_state.step = 'content_generation'
-            st.rerun()
-        return
-    
-    if 'approved_outline'
+    """PDF compilation and Google Drive upload page"""
+    st.header("📄 Step 5: Compile & Upload PDFs")
+    
+    if 'content' not in st.session_state or not st.session_state.content:
+        st.error("❌ No content found")
+        if st.button("← Back", key="back_no_content"):
+            st.session_state.step = 'content_generation'
+            st.rerun()
+        return
+    
+    # FIX: The 'if' statement was incomplete. It now checks for the approved_outline correctly.
+    if 'approved_outline' not in st.session_state or not st.session_state.approved_outline:
+        st.error("❌ No approved outline found to structure the PDFs.")
+        if st.button("← Back to Outline", key="back_no_outline_compilation"):
+            st.session_state.step = 'outline_generation'
+            st.rerun()
+        return
+
+    # The rest of your code for this function would continue here.
+    # For example, displaying the units and providing buttons to compile/upload.
+    st.info("Ready to compile your course content into PDFs.")
+
+    course_info = {
+        'course_title': st.session_state.course_title,
+        'course_code': st.session_state.course_code,
+        'credits': st.session_state.credits,
+        'target_audience': st.session_state.target_audience
+    }
+
+    for unit_data in st.session_state.approved_outline:
+        unit_num = unit_data['unit_number']
+        unit_title = unit_data['unit_title']
+        with st.expander(f"Unit {unit_num}: {unit_title}"):
+            st.write(f"Contains {len(unit_data.get('sections', []))} sections.")
+            
+            col1, col2, col3 = st.columns([2,2,1])
+            
+            with col1:
+                if st.button(f"📄 Compile PDF for Unit {unit_num}", key=f"compile_{unit_num}", use_container_width=True):
+                    with st.spinner(f"Generating PDF for Unit {unit_num}..."):
+                        pdf_buffer = compile_unit_pdf_egyankosh(unit_data, course_info, st.session_state.content)
+                        if pdf_buffer:
+                            st.session_state.uploaded_pdfs[f"Unit_{unit_num}.pdf"] = pdf_buffer
+                            st.success(f"✅ PDF for Unit {unit_num} compiled.")
+                        else:
+                            st.error(f"❌ Failed to compile PDF for Unit {unit_num}.")
+
+            with col2:
+                pdf_key = f"Unit_{unit_num}.pdf"
+                if pdf_key in st.session_state.uploaded_pdfs:
+                    st.download_button(
+                        label=f"⬇️ Download Unit {unit_num} PDF",
+                        data=st.session_state.uploaded_pdfs[pdf_key],
+                        file_name=pdf_key,
+                        mime="application/pdf",
+                        key=f"download_{unit_num}",
+                        use_container_width=True
+                    )
+            
+            with col3:
+                if st.session_state.get('gdrive_service') and pdf_key in st.session_state.uploaded_pdfs:
+                    if st.button(f"☁️ Upload Unit {unit_num}", key=f"upload_{unit_num}", use_container_width=True):
+                        with st.spinner(f"Uploading Unit {unit_num} to Google Drive..."):
+                            st.session_state.uploaded_pdfs[pdf_key].seek(0) # Reset buffer
+                            link = upload_to_gdrive(
+                                st.session_state.gdrive_service,
+                                st.session_state.uploaded_pdfs[pdf_key],
+                                pdf_key,
+                                st.session_state.gdrive_folder_id
+                            )
+                            if link:
+                                st.success(f"[View Unit {unit_num} on Google Drive]({link})")
+                            else:
+                                st.error("Upload failed.")
