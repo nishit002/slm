@@ -56,8 +56,8 @@ def get_api_headers():
         "Authorization": f"Bearer {api_key}"
     }
 
-def make_api_call(messages, retries=2, delay=3, timeout=180):
-    """Optimized API call"""
+def make_api_call(messages, retries=2, delay=3, timeout=180, max_tokens=2000):
+    """Optimized API call with configurable max_tokens"""
     headers = get_api_headers()
     
     if st.session_state.get('custom_model', '').strip():
@@ -71,7 +71,7 @@ def make_api_call(messages, retries=2, delay=3, timeout=180):
             "model": model,
             "stream": False,
             "temperature": 0.3,
-            "max_tokens": 2000
+            "max_tokens": max_tokens
         }
         
         for attempt in range(retries):
@@ -92,7 +92,6 @@ def make_api_call(messages, retries=2, delay=3, timeout=180):
                     time.sleep(delay)
     
     return None
-
 def compile_pdf_reportlab(course_title, content_dict, outline, target_audience="Postgraduate"):
     """Generate PDF using ReportLab (cloud-compatible)"""
     
@@ -425,32 +424,61 @@ def show_outline_page():
     
     if 'outline' not in st.session_state:
         with st.spinner("🤖 Generating course outline..."):
-            system_prompt = """Create a JSON array of course units with sections.
+            num_units = st.session_state.get('num_units', 4)
+            sections_per_unit = st.session_state.get('sections_per_unit', 8)
+            
+            system_prompt = """Create a comprehensive JSON array of course units with sections.
+
+YOU MUST CREATE THE EXACT NUMBER OF UNITS AND SECTIONS REQUESTED.
 
 STRICT JSON FORMAT:
 [
   {
     "unit_number": 1,
-    "unit_title": "Title Here",
+    "unit_title": "Descriptive Unit Title",
     "sections": [
       {
         "section_number": "1.1",
-        "section_title": "Section Title",
-        "description": "What this section covers"
+        "section_title": "Descriptive Section Title",
+        "description": "Brief description of what this section covers"
+      },
+      {
+        "section_number": "1.2",
+        "section_title": "Another Section Title",
+        "description": "What topics are covered here"
       }
     ]
+  },
+  {
+    "unit_number": 2,
+    "unit_title": "Second Unit Title",
+    "sections": [...]
   }
 ]
 
-Return ONLY valid JSON, no other text."""
+CRITICAL REQUIREMENTS:
+1. Create EXACTLY the number of units requested
+2. Each unit must have EXACTLY the number of sections requested
+3. Section numbers follow the pattern: 1.1, 1.2, 1.3... for unit 1, then 2.1, 2.2, 2.3... for unit 2
+4. Each section must have a unique, descriptive title relevant to the course
+5. Return ONLY valid JSON, no explanations or additional text"""
 
-            user_prompt = f"""Course: {st.session_state.course_title}
-Target: {st.session_state.target_audience}
+            user_prompt = f"""Course Title: {st.session_state.course_title}
+Target Audience: {st.session_state.target_audience}
+Learning Objectives: {st.session_state.learning_objectives}
 
-Create {st.session_state.num_units} units with {st.session_state.sections_per_unit} sections each.
-Section numbers: 1.1, 1.2, 1.3, etc.
+REQUIREMENTS:
+- Create EXACTLY {num_units} units
+- Each unit must have EXACTLY {sections_per_unit} sections
+- Total sections will be: {num_units * sections_per_unit}
 
-Output JSON only."""
+Create a comprehensive course outline with:
+- Unit 1, Unit 2, Unit 3, etc. (up to {num_units})
+- Each unit should have sections numbered appropriately (1.1-1.{sections_per_unit}, 2.1-2.{sections_per_unit}, etc.)
+- Make titles specific and relevant to "{st.session_state.course_title}"
+- Include varied topics across all units
+
+Return ONLY the JSON array, nothing else."""
             
             messages = [
                 {"role": "system", "content": system_prompt},
@@ -461,18 +489,38 @@ Output JSON only."""
             
             if outline_str:
                 try:
+                    # Extract JSON from response
                     json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', outline_str, re.DOTALL)
                     if json_match:
                         outline_str = json_match.group(1)
                     
-                    st.session_state.outline = json.loads(outline_str.strip())
-                    st.success("✅ Outline generated!")
-                except json.JSONDecodeError:
-                    st.error("❌ Failed to parse outline. Using default structure.")
-                    st.session_state.outline = create_default_outline()
+                    # Clean up the string
+                    outline_str = outline_str.strip()
+                    
+                    # Parse JSON
+                    parsed_outline = json.loads(outline_str)
+                    
+                    # Validate the outline has correct structure
+                    if isinstance(parsed_outline, list) and len(parsed_outline) > 0:
+                        st.session_state.outline = parsed_outline
+                        
+                        # Check if we got the right number
+                        actual_units = len(parsed_outline)
+                        if actual_units < num_units:
+                            st.warning(f"⚠️ Generated {actual_units} units instead of {num_units}. You can add more in the editor.")
+                        
+                        st.success(f"✅ Outline generated with {actual_units} units!")
+                    else:
+                        st.error("❌ Invalid outline structure. Using default.")
+                        st.session_state.outline = create_comprehensive_outline(num_units, sections_per_unit)
+                        
+                except json.JSONDecodeError as e:
+                    st.error(f"❌ Failed to parse outline: {str(e)}")
+                    st.warning("Using default comprehensive outline...")
+                    st.session_state.outline = create_comprehensive_outline(num_units, sections_per_unit)
             else:
-                st.error("❌ API call failed. Using default structure.")
-                st.session_state.outline = create_default_outline()
+                st.error("❌ API call failed. Using default comprehensive outline.")
+                st.session_state.outline = create_comprehensive_outline(num_units, sections_per_unit)
     
     if 'outline' in st.session_state:
         total_sections = sum(len(unit.get('sections', [])) for unit in st.session_state.outline)
@@ -556,6 +604,107 @@ Output JSON only."""
                     st.session_state.step = "content_generation"
                     st.rerun()
 
+
+def create_comprehensive_outline(num_units=4, sections_per_unit=8):
+    """Create a comprehensive default outline based on the course"""
+    outline = []
+    
+    # Base topics for Organizational Behaviour course
+    base_topics = [
+        {
+            "title": "Introduction and Foundations",
+            "sections": [
+                "Introduction to Organisational Behaviour",
+                "Objectives and Learning Outcomes",
+                "Meaning and Definition",
+                "Historical Perspective",
+                "Different Approaches and Theories",
+                "Organisational Behaviour in Educational Institutions",
+                "Need to Study Organisational Behaviour",
+                "Goals of Organisational Behaviour"
+            ]
+        },
+        {
+            "title": "Individual Behaviour and Personality",
+            "sections": [
+                "Understanding Individual Behaviour",
+                "Personality and Its Determinants",
+                "Personality Theories",
+                "Perception and Individual Decision Making",
+                "Values and Attitudes",
+                "Learning and Behaviour Modification",
+                "Motivation Theories",
+                "Job Satisfaction and Performance"
+            ]
+        },
+        {
+            "title": "Group Dynamics and Teams",
+            "sections": [
+                "Foundations of Group Behaviour",
+                "Stages of Group Development",
+                "Group Decision Making",
+                "Communication in Organizations",
+                "Leadership Concepts and Theories",
+                "Power and Politics",
+                "Conflict and Negotiation",
+                "Team Building and Effectiveness"
+            ]
+        },
+        {
+            "title": "Organizational Structure and Culture",
+            "sections": [
+                "Organizational Structure Fundamentals",
+                "Organizational Design",
+                "Organizational Culture",
+                "Change Management",
+                "Organizational Development",
+                "Stress Management",
+                "Work-Life Balance",
+                "Future of Organizational Behaviour"
+            ]
+        }
+    ]
+    
+    for i in range(num_units):
+        unit_num = i + 1
+        
+        # Use predefined topics or generate generic ones
+        if i < len(base_topics):
+            unit_title = base_topics[i]["title"]
+            section_titles = base_topics[i]["sections"]
+        else:
+            unit_title = f"Advanced Topics in Organisational Behaviour - Part {i - len(base_topics) + 1}"
+            section_titles = [
+                f"Topic {j+1}" for j in range(sections_per_unit)
+            ]
+        
+        sections = []
+        for j in range(sections_per_unit):
+            section_num = f"{unit_num}.{j+1}"
+            
+            if j < len(section_titles):
+                section_title = section_titles[j]
+            else:
+                section_title = f"Additional Topic {j+1}"
+            
+            sections.append({
+                "section_number": section_num,
+                "section_title": section_title,
+                "description": f"Comprehensive coverage of {section_title.lower()}"
+            })
+        
+        outline.append({
+            "unit_number": unit_num,
+            "unit_title": unit_title,
+            "sections": sections
+        })
+    
+    return outline
+
+
+def create_default_outline():
+    """Create a minimal default outline if generation completely fails"""
+    return create_comprehensive_outline(2, 4)
 def create_default_outline():
     """Create a default outline if generation fails"""
     return [
