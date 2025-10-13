@@ -1388,18 +1388,18 @@ def main():
     )
    
     st.markdown("""
-        <style>
-        .stButton button {
-            border-radius: 5px;
-        }
-        .stProgress > div > div > div > div {
-            background-color: #1f77b4;
-        }
-        div[data-testid="stMetricValue"] {
-            font-size: 28px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+<style>
+.stButton button {
+    border-radius: 5px;
+}
+.stProgress > div > div > div > div {
+    background-color: #1f77b4;
+}
+div[data-testid="stMetricValue"] {
+    font-size: 28px;
+}
+</style>
+""", unsafe_allow_html=True)
    
     st.title("🎓 AI Curriculum Generator")
     st.caption("Generate professional academic course materials with images and formulas")
