@@ -1,7 +1,7 @@
 """
-COMPLETE AI CURRICULUM GENERATOR - V2.0
-=========================================
-All features integrated: LLM-based Syllabus Parsing, Manual Outline Generation, 
+COMPLETE AI CURRICULUM GENERATOR - V2.1 (FIXED)
+===============================================
+All features integrated: LLM-based Syllabus Parsing, Manual Outline Generation,
 eGyankosh Style Content, PO/CO/PSO Mapping, Google Drive Upload, and Unit-wise PDF Compilation.
 """
 
@@ -346,8 +346,10 @@ def show_syllabus_upload_page():
 def show_configuration_page():
     st.header("⚙️ Step 2: Configure Course Details")
     
-    # Pre-fill from extracted data if available
-    extracted_info = st.session_state.get('extracted_structure', {}).get('course_info', {})
+    # FIX: Safely get nested dictionary to prevent AttributeError
+    extracted_structure = st.session_state.get('extracted_structure') or {}
+    extracted_info = extracted_structure.get('course_info', {})
+    
     st.session_state.course_title = st.text_input("Course Title", value=extracted_info.get('title') or st.session_state.course_title)
     
     col1, col2 = st.columns(2)
@@ -530,7 +532,7 @@ def show_compilation_page():
 
 # --- MAIN APP LOGIC ---
 st.set_page_config(layout="wide", page_title="AI Curriculum Generator")
-st.title("🎓 AI Curriculum Generator V2")
+st.title("🎓 AI Curriculum Generator V2.1")
 
 # Check for required libraries
 if not all([PYPDF2_AVAILABLE, GDRIVE_AVAILABLE, REPORTLAB_AVAILABLE]):
