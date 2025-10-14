@@ -2666,13 +2666,13 @@ def main():
         ### AI Curriculum Generator
         
         **Features:**
-        - 📄 PDF syllabus extraction
-        - 🤖 AI-powered content generation
-        - 🖼️ Image upload and prompt generation
-        - 📚 Professional PDF/DOCX compilation
-        - ☁️ Google Drive auto-upload with timestamped subfolders
-        - 🎯 Academic outcome mapping (PEO/PO/CO/PSO)
-        - ✍️ Fixed LaTeX equation rendering
+        - PDF syllabus extraction
+        - AI-powered content generation
+        - Image upload and prompt generation
+        - Professional PDF/DOCX compilation
+        - Google Drive auto-upload with timestamped subfolders
+        - Academic outcome mapping (PEO/PO/CO/PSO)
+        - Fixed LaTeX equation rendering
         
         **Technologies:**
         - Grok AI (grok-2-1212)
