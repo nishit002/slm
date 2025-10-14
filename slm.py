@@ -720,6 +720,7 @@ def setup_gdrive_for_compilation():
 # ============================================================================
 # Phase 2 Complete
 # ============================================================================
+"""
 print("Phase 2: Helper Functions loaded successfully")"""
 PHASE 3: CONTENT GENERATION AND COMPILATION
 ============================================
