@@ -1065,8 +1065,6 @@ def compile_unit_pdf(unit_data, course_info, content_dict):
     def add_page_elements(canvas, doc):
         add_header_footer(canvas, doc, course_info, st.session_state.get('logo'))
     
-    doc.build.__defaults__ = (None, add_page_elements, add_page_elements)
-    
     story = []
     styles = getSampleStyleSheet()
     
@@ -1997,7 +1995,7 @@ def show_outline_page():
             current = None
             
             for row in edited:
-                unit_num = row['Unit']
+                unit_num = int(row['Unit'])
                 unit_title = row['Unit Title']
                 section_num = row['Section']
                 section_title = row['Section Title']
