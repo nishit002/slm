@@ -1,10 +1,14 @@
 """
-COMPLETE AI CURRICULUM GENERATOR - SYNTAX FIXED & ENHANCED
-================================================
-All features integrated with proper syntax
-Enhancements: Fixed page estimation, added image upload per section, better PDF formatting with bold/italics,
-document heading/logo (header), fixed Drive uploads, options for separate/combined outputs, DOCX for editable Google Docs
-Fixed: Table.copy() error, better Drive error handling
+COMPLETE AI CURRICULUM GENERATOR - FULLY FIXED VERSION
+========================================================
+Phase 1: Imports and Configuration
+
+Features:
+- Fixed LaTeX equation rendering
+- Automatic timestamped Google Drive subfolders
+- Image generation prompts and upload
+- Enhanced error handling
+- Complete academic content generation
 """
 
 import streamlit as st
@@ -15,7 +19,7 @@ import os
 import re
 from datetime import datetime
 from io import BytesIO
-from PIL import Image as PilImage  # For logo handling
+from PIL import Image as PilImage
 
 # PDF imports
 try:
@@ -23,6 +27,7 @@ try:
     PYPDF2_AVAILABLE = True
 except ImportError:
     PYPDF2_AVAILABLE = False
+    st.warning("⚠️ PyPDF2 not installed - PDF upload disabled")
 
 # Google Drive imports
 try:
@@ -32,8 +37,9 @@ try:
     GDRIVE_AVAILABLE = True
 except ImportError:
     GDRIVE_AVAILABLE = False
+    st.warning("⚠️ Google Drive libraries not installed")
 
-# ReportLab imports
+# ReportLab imports for PDF generation
 try:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -47,22 +53,28 @@ try:
     REPORTLAB_AVAILABLE = True
 except ImportError:
     REPORTLAB_AVAILABLE = False
+    st.error("❌ ReportLab not installed - PDF generation disabled")
 
 # DOCX imports for editable output
 try:
     from docx import Document
-    from docx.shared import Inches, Pt
+    from docx.shared import Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.enum.style import WD_STYLE_TYPE
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
+    st.warning("⚠️ python-docx not installed - DOCX generation disabled")
 
-# Configuration
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
+
+# Grok API Configuration
 DEFAULT_API_KEY = "xai-6QJwG3u6540lVZyXbFBArvLQ43ZyJsrnq65pyCWhxh5zXqNvtwe6LdTURbTwvE2sA3Uxlb9gn82Vamgu"
 API_URL = "https://api.x.ai/v1/chat/completions"
 
-# Google Drive Service Account JSON
+# Google Drive Service Account Credentials
 GDRIVE_CREDENTIALS = {
     "type": "service_account",
     "project_id": "dynamic-wording-475018-e2",
@@ -77,44 +89,100 @@ GDRIVE_CREDENTIALS = {
     "universe_domain": "googleapis.com"
 }
 
+# ============================================================================
+# SESSION STATE INITIALIZATION
+# ============================================================================
+
 def initialize_session_state():
-    """Initialize session state variables"""
+    """Initialize all session state variables"""
     defaults = {
+        # Navigation
         'step': 'syllabus_upload',
+        
+        # API Configuration
         'api_key': DEFAULT_API_KEY,
+        
+        # Course Information
         'course_title': 'Organizational Behaviour',
         'course_code': 'MBA101',
         'credits': 3,
         'target_audience': 'Postgraduate (MBA)',
+        
+        # Structure Configuration
         'num_units': 4,
         'sections_per_unit': 8,
+        
+        # Academic Mappings
         'program_objectives': '',
         'program_outcomes': '',
         'course_outcomes': '',
         'specialized_outcomes': '',
+        
+        # Document Customization
         'use_egyankosh_style': True,
+        'document_heading': '',
+        'logo': None,
+        
+        # Google Drive
         'gdrive_folder_url': '',
         'gdrive_folder_id': '',
-        'logo': None,
-        'document_heading': '',
+        
+        # Content Storage
         'content': {},
-        'images': {},  # section_key: uploaded_file
-        'paused': False
+        'images': {},  # section_key: {image_data, prompt}
+        'image_prompts': {},  # section_key: prompt for image generation
+        
+        # Generation Control
+        'paused': False,
+        'extracted_structure': None,
+        'outline': None,
+        'approved_outline': None,
+        'sections_to_process': [],
+        'generation_start_time': None,
     }
     
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
+# ============================================================================
+# Phase 1 Complete
+# ============================================================================
+print("Phase 1: Imports and Configuration loaded successfully")
+"""
+PHASE 2: HELPER FUNCTIONS
+==========================
+- API communication with detailed logging
+- PDF extraction and syllabus parsing
+- LaTeX equation handling (FIXED)
+- Google Drive operations with auto-subfolder (FIXED)
+- Text cleaning and formatting
+"""
+
+# ============================================================================
+# API HELPER FUNCTIONS
+# ============================================================================
+
 def get_api_headers():
-    """Get API headers"""
+    """Get API headers with current API key"""
     return {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {st.session_state.api_key}"
     }
 
 def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
-    """Make API call with detailed logging"""
+    """
+    Make API call to Grok with detailed logging and error handling
+    
+    Args:
+        messages: List of message dicts with role and content
+        retries: Number of retry attempts
+        timeout: Request timeout in seconds
+        max_tokens: Maximum tokens in response
+        
+    Returns:
+        str: API response content or None if failed
+    """
     headers = get_api_headers()
     
     payload = {
@@ -141,7 +209,7 @@ def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
             
             st.write(f"📡 Response Status: {response.status_code}")
             
-            # Show response headers
+            # Show response time
             if response.headers:
                 st.write(f"⏱️ Response time: {response.elapsed.total_seconds():.2f}s")
             
@@ -152,7 +220,7 @@ def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
             if 'choices' in result and len(result['choices']) > 0:
                 content = result['choices'][0]['message']['content']
                 
-                # Analyze response
+                # Analyze response quality
                 word_count = len(content.split())
                 char_count = len(content)
                 has_structure = any(keyword in content.upper() for keyword in ['INTRODUCTION', 'LEARNING OBJECTIVES', 'CHECK YOUR PROGRESS'])
@@ -218,23 +286,52 @@ def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
     st.error("❌ All API attempts failed - check logs above for details")
     return None
 
+# ============================================================================
+# PDF AND SYLLABUS PROCESSING
+# ============================================================================
+
 def extract_pdf_text(pdf_file):
-    """Extract text from PDF"""
+    """
+    Extract text from uploaded PDF file
+    
+    Args:
+        pdf_file: Uploaded PDF file object
+        
+    Returns:
+        str: Extracted text or None if failed
+    """
+    if not PYPDF2_AVAILABLE:
+        st.error("PyPDF2 not installed - cannot extract PDF")
+        return None
+        
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
         text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
+        
+        for page_num, page in enumerate(pdf_reader.pages):
+            page_text = page.extract_text()
+            text += page_text + "\n"
+            
+        st.success(f"✅ Extracted {len(text)} characters from {len(pdf_reader.pages)} pages")
         return text
+        
     except Exception as e:
-        st.error(f"Error extracting PDF: {str(e)}")
+        st.error(f"❌ Error extracting PDF: {str(e)}")
         return None
 
 def parse_syllabus_structure(text):
-    """Parse syllabus structure"""
+    """
+    Parse syllabus text to extract course structure
+    
+    Args:
+        text: Syllabus text content
+        
+    Returns:
+        dict: Structured syllabus data with course_info and units
+    """
     structure = {'course_info': {}, 'units': []}
     
-    # Extract course info
+    # Extract course information
     patterns = {
         'title': r'(?:Course|Subject)\s*(?:Title|Name)?\s*:?\s*(.+)',
         'code': r'(?:Course|Subject)\s*Code\s*:?\s*([A-Z0-9]+)',
@@ -246,7 +343,7 @@ def parse_syllabus_structure(text):
         if match:
             structure['course_info'][key] = match.group(1).strip()
     
-    # Extract units
+    # Extract units with their topics
     unit_pattern = r'UNIT[\s-]*(\d+)\s*:?\s*(.+?)(?=UNIT[\s-]*\d+|$)'
     units = re.finditer(unit_pattern, text, re.IGNORECASE | re.DOTALL)
     
@@ -254,15 +351,17 @@ def parse_syllabus_structure(text):
         unit_num = unit_match.group(1)
         unit_content = unit_match.group(2)
         
+        # Extract unit title (first line)
         title_match = re.search(r'^(.+?)(?:\n|$)', unit_content)
         unit_title = title_match.group(1).strip() if title_match else f"Unit {unit_num}"
         
+        # Extract topics (numbered lines)
         topics = []
         lines = unit_content.split('\n')
         for line in lines:
             if re.match(r'^\s*[\d.]+\s+(.+?)$', line):
                 topic = re.match(r'^\s*[\d.]+\s+(.+?)$', line).group(1).strip()
-                if 5 < len(topic) < 200:
+                if 5 < len(topic) < 200:  # Filter reasonable topic lengths
                     topics.append(topic)
         
         structure['units'].append({
@@ -273,46 +372,207 @@ def parse_syllabus_structure(text):
     
     return structure
 
+# ============================================================================
+# TEXT CLEANING AND FORMATTING (FIXED LATEX HANDLING)
+# ============================================================================
+
+def clean_text_for_pdf(text):
+    """
+    Clean text for PDF with HTML tags for bold/italic and handle LaTeX equations
+    
+    Args:
+        text: Raw text with markdown and LaTeX
+        
+    Returns:
+        str: Cleaned text with HTML formatting
+    """
+    if not text:
+        return ""
+    
+    # Convert LaTeX equations to readable format
+    # Inline math: \( ... \) or $ ... $
+    text = re.sub(r'\\\((.*?)\\\)', r'[\1]', text)
+    text = re.sub(r'\$([^\$]+?)\$', r'[\1]', text)
+    
+    # Display math: \[ ... \] or $$ ... $$
+    text = re.sub(r'\\\[(.*?)\\\]', r'[\1]', text, flags=re.DOTALL)
+    text = re.sub(r'\$\$(.*?)\$\$', r'[\1]', text, flags=re.DOTALL)
+    
+    # Common LaTeX commands to Unicode symbols
+    latex_replacements = {
+        r'\\leq': '≤',
+        r'\\geq': '≥',
+        r'\\neq': '≠',
+        r'\\approx': '≈',
+        r'\\equiv': '≡',
+        r'\\times': '×',
+        r'\\div': '÷',
+        r'\\pm': '±',
+        r'\\mp': '∓',
+        r'\\sum': 'Σ',
+        r'\\prod': 'Π',
+        r'\\int': '∫',
+        r'\\infty': '∞',
+        r'\\partial': '∂',
+        r'\\nabla': '∇',
+        r'\\alpha': 'α',
+        r'\\beta': 'β',
+        r'\\gamma': 'γ',
+        r'\\delta': 'δ',
+        r'\\epsilon': 'ε',
+        r'\\theta': 'θ',
+        r'\\lambda': 'λ',
+        r'\\mu': 'μ',
+        r'\\pi': 'π',
+        r'\\sigma': 'σ',
+        r'\\tau': 'τ',
+        r'\\phi': 'φ',
+        r'\\omega': 'ω',
+        r'\\Gamma': 'Γ',
+        r'\\Delta': 'Δ',
+        r'\\Theta': 'Θ',
+        r'\\Lambda': 'Λ',
+        r'\\Sigma': 'Σ',
+        r'\\Phi': 'Φ',
+        r'\\Omega': 'Ω',
+        r'\\rightarrow': '→',
+        r'\\leftarrow': '←',
+        r'\\Rightarrow': '⇒',
+        r'\\Leftarrow': '⇐',
+        r'\\leftrightarrow': '↔',
+        r'\\Leftrightarrow': '⇔',
+        r'\\forall': '∀',
+        r'\\exists': '∃',
+        r'\\in': '∈',
+        r'\\notin': '∉',
+        r'\\subset': '⊂',
+        r'\\subseteq': '⊆',
+        r'\\supset': '⊃',
+        r'\\supseteq': '⊇',
+        r'\\cup': '∪',
+        r'\\cap': '∩',
+        r'\\emptyset': '∅',
+        r'\\_': '_',
+        r'\\{': '{',
+        r'\\}': '}',
+        r'\\%': '%',
+    }
+    
+    for latex, symbol in latex_replacements.items():
+        text = re.sub(latex, symbol, text)
+    
+    # Handle subscripts and superscripts (simplified)
+    text = re.sub(r'_\{([^}]+)\}', r'_\1', text)
+    text = re.sub(r'\^\{([^}]+)\}', r'^\1', text)
+    
+    # Remove remaining LaTeX commands
+    text = re.sub(r'\\[a-zA-Z]+\{([^}]*)\}', r'\1', text)
+    text = re.sub(r'\\[a-zA-Z]+', '', text)
+    
+    # Handle markdown bold and italic
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    
+    # Remove markdown headers
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    
+    return text
+
+# ============================================================================
+# GOOGLE DRIVE OPERATIONS (FIXED WITH AUTO-SUBFOLDER)
+# ============================================================================
+
 def setup_google_drive_connection():
-    """Setup Google Drive"""
+    """
+    Setup Google Drive API connection with service account
+    
+    Returns:
+        Google Drive service object or None if failed
+    """
+    if not GDRIVE_AVAILABLE:
+        st.error("Google Drive libraries not installed")
+        return None
+        
     try:
         credentials = service_account.Credentials.from_service_account_info(
             GDRIVE_CREDENTIALS,
             scopes=['https://www.googleapis.com/auth/drive.file']
         )
         service = build('drive', 'v3', credentials=credentials)
+        
+        # Test connection
+        service.files().list(pageSize=1).execute()
+        
         return service
+        
     except Exception as e:
-        st.error(f"Google Drive connection failed: {str(e)}")
+        st.error(f"❌ Google Drive connection failed: {str(e)}")
+        st.error("💡 Make sure the service account has access to the folder")
+        st.info("📧 Share folder with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
         return None
 
 def extract_folder_id_from_url(url):
-    """Extract folder ID from URL"""
-    patterns = [r'folders/([a-zA-Z0-9_-]+)', r'id=([a-zA-Z0-9_-]+)']
+    """
+    Extract Google Drive folder ID from URL
+    
+    Args:
+        url: Google Drive folder URL or ID
+        
+    Returns:
+        str: Folder ID or None if invalid
+    """
+    patterns = [
+        r'folders/([a-zA-Z0-9_-]+)',
+        r'id=([a-zA-Z0-9_-]+)',
+        r'https://drive\.google\.com/drive/[^/]+/([a-zA-Z0-9_-]+)'
+    ]
     
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             return match.group(1)
     
+    # Check if it's already just an ID
     if re.match(r'^[a-zA-Z0-9_-]+$', url):
         return url
     
     return None
 
 def create_or_use_folder(service, folder_name, parent_id=None):
-    """Create or use existing folder"""
+    """
+    Create new folder or use existing one in Google Drive
+    
+    Args:
+        service: Google Drive service object
+        folder_name: Name of folder to create
+        parent_id: Parent folder ID (optional)
+        
+    Returns:
+        str: Folder ID or None if failed
+    """
     try:
+        # Check if folder already exists
         query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
         if parent_id:
             query += f" and '{parent_id}' in parents"
         
-        results = service.files().list(q=query, fields="files(id, name)").execute()
+        results = service.files().list(
+            q=query,
+            fields="files(id, name, webViewLink)",
+            spaces='drive'
+        ).execute()
+        
         folders = results.get('files', [])
         
         if folders:
-            return folders[0]['id']
+            folder_id = folders[0]['id']
+            folder_link = folders[0].get('webViewLink', '')
+            st.info(f"✅ Using existing folder: {folder_name}")
+            if folder_link:
+                st.info(f"🔗 Folder: {folder_link}")
+            return folder_id
         
+        # Create new folder
         file_metadata = {
             'name': folder_name,
             'mimeType': 'application/vnd.google-apps.folder'
@@ -321,34 +581,170 @@ def create_or_use_folder(service, folder_name, parent_id=None):
         if parent_id:
             file_metadata['parents'] = [parent_id]
         
-        folder = service.files().create(body=file_metadata, fields='id').execute()
-        return folder.get('id')
+        folder = service.files().create(
+            body=file_metadata,
+            fields='id,webViewLink'
+        ).execute()
+        
+        folder_id = folder.get('id')
+        folder_link = folder.get('webViewLink')
+        
+        st.success(f"✅ Created new folder: {folder_name}")
+        if folder_link:
+            st.info(f"🔗 Folder: {folder_link}")
+        
+        return folder_id
+        
     except Exception as e:
-        st.error(f"Error creating folder: {str(e)}")
+        st.error(f"❌ Error with folder '{folder_name}': {str(e)}")
+        
+        # Check for permission errors
+        error_str = str(e).lower()
+        if 'insufficient permissions' in error_str or 'forbidden' in error_str or '403' in error_str:
+            st.error("🔒 PERMISSION ERROR!")
+            st.error("The service account doesn't have access to this folder.")
+            st.info("📋 **Steps to fix:**")
+            st.info("1. Open your Google Drive folder")
+            st.info("2. Click the 'Share' button")
+            st.info("3. Add: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
+            st.info("4. Give 'Editor' permissions")
+            st.info("5. Click 'Send'")
+            st.info("6. Try again")
+        
         return None
 
 def upload_to_gdrive(service, file_buffer, filename, folder_id, mime_type='application/pdf'):
-    """Upload file to Google Drive"""
-    try:
-        file_metadata = {'name': filename, 'parents': [folder_id]}
-        media = MediaIoBaseUpload(file_buffer, mimetype=mime_type, resumable=True)
-        file = service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
-        return file.get('webViewLink')
-    except Exception as e:
-        st.error(f"Upload error: {str(e)}")
-        return None
+    """
+    Upload file to Google Drive with retry logic
+    
+    Args:
+        service: Google Drive service object
+        file_buffer: BytesIO buffer with file content
+        filename: Name for the file
+        folder_id: Destination folder ID
+        mime_type: MIME type of file
+        
+    Returns:
+        str: Web view link or None if failed
+    """
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            file_metadata = {
+                'name': filename,
+                'parents': [folder_id]
+            }
+            
+            file_buffer.seek(0)  # Reset buffer position
+            
+            media = MediaIoBaseUpload(
+                file_buffer,
+                mimetype=mime_type,
+                resumable=True,
+                chunksize=1024*1024  # 1MB chunks
+            )
+            
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id,webViewLink,webContentLink'
+            ).execute()
+            
+            file_id = file.get('id')
+            web_link = file.get('webViewLink')
+            
+            # Optionally make file accessible to anyone with link
+            try:
+                permission = {
+                    'type': 'anyone',
+                    'role': 'reader'
+                }
+                service.permissions().create(
+                    fileId=file_id,
+                    body=permission
+                ).execute()
+            except:
+                pass  # Ignore permission errors for sharing
+            
+            return web_link
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"⚠️ Upload attempt {attempt + 1} failed, retrying...")
+                time.sleep(2)
+            else:
+                st.error(f"❌ Upload failed after {max_retries} attempts: {str(e)}")
+                return None
+    
+    return None
 
-def clean_text_for_pdf(text):
-    """Clean text for PDF with HTML tags for bold/italic"""
-    if not text:
-        return ""
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-    return text
+def setup_gdrive_for_compilation():
+    """
+    Setup Google Drive with automatic timestamped subfolder creation
+    
+    Returns:
+        tuple: (service, folder_id) or (None, None) if failed
+    """
+    with st.spinner("🔗 Connecting to Google Drive..."):
+        gdrive_service = setup_google_drive_connection()
+        
+        if not gdrive_service:
+            st.error("❌ Google Drive connection failed")
+            return None, None
+        
+        st.success("✅ Connected to Google Drive")
+        
+        # Create timestamped subfolder automatically
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        folder_name = f"{st.session_state.course_code}_{timestamp}"
+        
+        st.info(f"📁 Creating subfolder: {folder_name}")
+        
+        # Create subfolder inside the provided parent folder
+        gdrive_folder_id = create_or_use_folder(
+            gdrive_service,
+            folder_name,
+            st.session_state.gdrive_folder_id  # Parent folder ID from URL
+        )
+        
+        if gdrive_folder_id:
+            st.success(f"✅ Subfolder created: {folder_name}")
+            st.info(f"📂 All files will be uploaded here")
+            return gdrive_service, gdrive_folder_id
+        else:
+            st.error("❌ Could not create subfolder - check permissions above")
+            st.error("Make sure you shared the folder with the service account")
+            return None, None
+
+# ============================================================================
+# Phase 2 Complete
+# ============================================================================
+print("Phase 2: Helper Functions loaded successfully")"""
+PHASE 3: CONTENT GENERATION AND COMPILATION
+============================================
+- AI content generation with image prompts
+- Outline generation
+- PDF compilation with images and LaTeX support
+- DOCX compilation with images
+- Header/footer with logo support
+"""
+
+# ============================================================================
+# CONTENT GENERATION
+# ============================================================================
 
 def generate_content(section_info, course_context):
-    """Generate content"""
+    """
+    Generate academic content for a section with image suggestions
+    
+    Args:
+        section_info: Dict with section_number, section_title, description
+        course_context: Dict with course details and outcomes
+        
+    Returns:
+        str: Generated content
+    """
     system_prompt = f"""You are an expert academic content developer for {course_context['target_audience']}.
 
 Generate comprehensive content following eGyankosh standards:
@@ -357,789 +753,59 @@ Generate comprehensive content following eGyankosh standards:
 - Readability: 10-12
 - Suggest 1-2 relevant image placements with descriptions (e.g., "Image: Diagram of organizational structure")
 
-STRUCTURE:
-1. Introduction
-2. Learning Objectives (Bloom's Taxonomy mapped)
-3. Detailed Content
-4. Examples & Case Studies
-5. CHECK YOUR PROGRESS (5-7 questions)
-6. Summary
-7. Key Terms
+STRUCTURE (MUST INCLUDE ALL):
+1. Introduction (2-3 paragraphs introducing the topic)
+2. Learning Objectives (5-7 objectives mapped to Bloom's Taxonomy: Remember, Understand, Apply, Analyze, Evaluate, Create)
+3. Detailed Content (Main body with subsections, definitions, explanations)
+4. Examples & Case Studies (Practical real-world examples)
+5. CHECK YOUR PROGRESS (5-7 questions for self-assessment)
+6. Summary (Concise recap of key points)
+7. Key Terms (Glossary of important terms)
 
 Map to:
 - PO: {course_context.get('program_outcomes', 'N/A')}
 - CO: {course_context.get('course_outcomes', 'N/A')}
-- PSO: {course_context.get('specialized_outcomes', 'N/A')}"""
+- PSO: {course_context.get('specialized_outcomes', 'N/A')}
 
-    user_prompt = f"""Write content for:
-Topic: {section_info['section_number']} {section_info['section_title']}
-Course: {course_context['course_title']}
-Description: {section_info['description']}
+For mathematical content, use plain text format: write equations as "Z = c1*x1 + c2*x2 + ... + cn*xn" instead of LaTeX."""
 
-Include definitions, examples, case studies, practical applications, and **bold key terms**. Use *italics* for emphasis."""
+    user_prompt = f"""Write comprehensive academic content for:
+
+**Topic:** {section_info['section_number']} {section_info['section_title']}
+**Course:** {course_context['course_title']}
+**Description:** {section_info['description']}
+
+Requirements:
+- Include clear definitions with **bold key terms**
+- Provide detailed explanations with examples
+- Add case studies relevant to {course_context['target_audience']}
+- Include practical applications
+- Use *italics* for emphasis
+- Write equations in plain text format (no LaTeX)
+- Suggest image placements with descriptions
+
+Make it engaging, informative, and academically rigorous."""
 
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt}
     ]
     
-    return make_api_call(messages, max_tokens=2000)
-
-def add_header_footer(doc, canvas, course_info, logo=None):
-    """Add header and footer to PDF"""
-    canvas.saveState()
-    
-    # Document heading
-    heading = st.session_state.get('document_heading', course_info['course_title'])
-    canvas.setFont("Helvetica-Bold", 12)
-    canvas.drawString(72, doc.height - 72, heading)
-    
-    # Logo in header (top right)
-    if logo:
-        try:
-            logo_bytes = logo.read()
-            logo_buffer = BytesIO(logo_bytes)
-            canvas.drawImage(logo_buffer, doc.width - 2*inch, doc.height - 1*inch, width=1*inch, height=0.5*inch, preserveAspectRatio=True)
-        except:
-            pass  # Ignore logo error
-    
-    # Footer
-    canvas.setFont("Helvetica", 10)
-    canvas.drawString(doc.width / 2 - 100, 72, f"Page {doc.page}")
-    canvas.drawString(72, 72, f"Generated: {datetime.now().strftime('%Y-%m-%d')}")
-    
-    canvas.restoreState()
-
-def create_line_table():
-    """Create line table for decoration"""
-    line_table = Table([['']], colWidths=[6.5*inch])
-    line_table.setStyle(TableStyle([('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4'))]))
-    return line_table
-
-def compile_unit_pdf(unit_data, course_info, content_dict):
-    """Compile unit PDF with enhanced formatting"""
-    if not REPORTLAB_AVAILABLE:
-        return None
-    
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
-        topMargin=1.2*inch, bottomMargin=1*inch,
-        onFirstPage=lambda canvas, doc: add_header_footer(doc, canvas, course_info, st.session_state.logo),
-        onLaterPages=lambda canvas, doc: add_header_footer(doc, canvas, course_info, st.session_state.logo)
-    )
-    
-    story = []
-    styles = getSampleStyleSheet()
-    
-    # Enhanced styles
-    title_style = ParagraphStyle(
-        'Title', parent=styles['Heading1'], fontSize=24,
-        textColor=colors.HexColor('#1f77b4'), alignment=TA_CENTER, fontName='Helvetica-Bold',
-        spaceAfter=30, spaceBefore=20
-    )
-    
-    section_style = ParagraphStyle(
-        'Section', parent=styles['Heading2'], fontSize=16,
-        textColor=colors.HexColor('#2c3e50'), fontName='Helvetica-Bold',
-        spaceAfter=12, spaceBefore=12, leftIndent=0
-    )
-    
-    subsection_style = ParagraphStyle(
-        'Subsection', parent=styles['Heading3'], fontSize=14,
-        textColor=colors.HexColor('#34495e'), fontName='Helvetica-Bold',
-        spaceAfter=10
-    )
-    
-    body_style = ParagraphStyle(
-        'Body', parent=styles['BodyText'], fontSize=11, alignment=TA_JUSTIFY, 
-        spaceAfter=8, leading=14, fontName='Helvetica'
-    )
-    
-    # Cover page
-    story.append(Spacer(1, 1*inch))
-    story.append(Paragraph(f"UNIT {unit_data['unit_number']}", styles['Heading2']))
-    story.append(Spacer(1, 0.2*inch))
-    story.append(Paragraph(unit_data['unit_title'].upper(), title_style))
-    story.append(Spacer(1, 0.5*inch))
-    
-    # Decorative line
-    story.append(create_line_table())
-    story.append(Spacer(1, 0.3*inch))
-    
-    story.append(Paragraph(course_info.get('course_title', ''), styles['Heading3']))
-    story.append(Paragraph(f"Course Code: {course_info.get('course_code', 'N/A')}", styles['Normal']))
-    story.append(Paragraph(f"Credits: {course_info.get('credits', 3)}", styles['Normal']))
-    story.append(PageBreak())
-    
-    # Content sections
-    for section in unit_data.get('sections', []):
-        sec_key = f"{section['section_number']} {section['section_title']}"
-        story.append(Paragraph(f"<b>{sec_key}</b>", section_style))
-        story.append(create_line_table())  # Line under section
-        story.append(Spacer(1, 0.2*inch))
-        
-        content = content_dict.get(sec_key, "[Not generated]")
-        image = st.session_state.images.get(sec_key)
-        
-        # Add image if available
-        if image:
-            try:
-                img_buffer = BytesIO(image.read())
-                story.append(Image(img_buffer, width=4*inch, height=2*inch))
-                story.append(Spacer(1, 0.2*inch))
-            except:
-                pass
-        
-        lines = content.split('\n')
-        in_subsection = False
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                story.append(Spacer(1, 6))
-                continue
-            
-            if 'CHECK YOUR PROGRESS' in line.upper():
-                progress_para = Paragraph("<b>CHECK YOUR PROGRESS</b>", subsection_style)
-                story.append(progress_para)
-                story.append(Spacer(1, 0.1*inch))
-            elif line.startswith('## '):  # Subsection
-                clean_line = clean_text_for_pdf(line[3:])
-                story.append(Paragraph(clean_line, subsection_style))
-                in_subsection = True
-            elif line.startswith(('*', '-', '•')):
-                clean_line = clean_text_for_pdf(re.sub(r'^[\*\-•]\s*', '', line))
-                story.append(Paragraph(f"• {clean_line}", body_style))
-            else:
-                clean_line = clean_text_for_pdf(line)
-                if len(clean_line) > 3:
-                    try:
-                        story.append(Paragraph(clean_line, body_style))
-                    except:
-                        pass
-        
-        story.append(Spacer(1, 0.5*inch))
-        story.append(PageBreak())
-    
-    try:
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
-    except Exception as e:
-        st.error(f"PDF error: {str(e)}")
-        return None
-
-def compile_complete_pdf(outline, course_info, content_dict):
-    """Compile complete course PDF"""
-    if not REPORTLAB_AVAILABLE:
-        return None
-    
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4, rightMargin=72, leftMargin=72, 
-        topMargin=1.2*inch, bottomMargin=1*inch,
-        onFirstPage=lambda canvas, doc: add_header_footer(doc, canvas, course_info, st.session_state.logo),
-        onLaterPages=lambda canvas, doc: add_header_footer(doc, canvas, course_info, st.session_state.logo)
-    )
-    
-    story = []
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title', parent=styles['Title'], fontSize=28, alignment=TA_CENTER, spaceAfter=40)
-    
-    # Title page
-    story.append(Paragraph(course_info['course_title'], title_style))
-    story.append(Paragraph(f"Course Code: {course_info['course_code']} | Credits: {course_info['credits']}", styles['Normal']))
-    story.append(Spacer(1, 2*inch))
-    story.append(Paragraph("Complete Curriculum", styles['Heading1']))
-    story.append(PageBreak())
-    
-    # Units
-    for unit in outline:
-        story.append(Paragraph(f"UNIT {unit['unit_number']}: {unit['unit_title']}", styles['Heading1']))
-        story.append(PageBreak())
-        
-        for section in unit.get('sections', []):
-            sec_key = f"{section['section_number']} {section['section_title']}"
-            story.append(Paragraph(sec_key, styles['Heading2']))
-            
-            content = content_dict.get(sec_key, "[Not generated]")
-            image = st.session_state.images.get(sec_key)
-            
-            if image:
-                try:
-                    img_buffer = BytesIO(image.read())
-                    story.append(Image(img_buffer, width=4*inch, height=2*inch))
-                except:
-                    pass
-            
-            clean_content = clean_text_for_pdf(content)
-            story.append(Paragraph(clean_content, styles['Normal']))
-            story.append(PageBreak())
-    
-    try:
-        doc.build(story)
-        buffer.seek(0)
-        return buffer
-    except Exception as e:
-        st.error(f"Complete PDF error: {str(e)}")
-        return None
-
-def compile_unit_docx(unit_data, course_info, content_dict):
-    """Compile unit as editable DOCX"""
-    if not DOCX_AVAILABLE:
-        return None
-    
-    buffer = BytesIO()
-    doc = Document()
-    
-    # Styles
-    styles = doc.styles
-    try:
-        title_style = styles.add_style('CustomTitle', WD_STYLE_TYPE.PARAGRAPH)
-        title_style.font.name = 'Calibri'
-        title_style.font.size = Pt(24)
-        title_style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    except:
-        pass
-    
-    # Title
-    title = doc.add_heading(f"UNIT {unit_data['unit_number']}: {unit_data['unit_title']}", 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    
-    doc.add_paragraph(f"Course: {course_info['course_title']} | Code: {course_info['course_code']} | Credits: {course_info['credits']}")
-    doc.add_page_break()
-    
-    # Content
-    for section in unit_data.get('sections', []):
-        sec_key = f"{section['section_number']} {section['section_title']}"
-        sec_heading = doc.add_heading(sec_key, level=1)
-        
-        content = content_dict.get(sec_key, "[Not generated]")
-        
-        # Add image if available
-        image = st.session_state.images.get(sec_key)
-        if image:
-            try:
-                img_bytes = image.read()
-                doc.add_picture(BytesIO(img_bytes), width=Inches(4))
-            except:
-                pass
-        
-        # Add text, simple bold/italic parsing
-        for line in content.split('\n'):
-            line = line.strip()
-            if line:
-                p = doc.add_paragraph(line)
-                # Basic bold: if **text**, but for simplicity, assume clean_text_for_pdf output
-                if '**' in line:
-                    # Run bold
-                    for match in re.finditer(r'\*\*(.+?)\*\*', line):
-                        inline = p.add_run(match.group(1))
-                        inline.bold = True
-        
-        doc.add_page_break()
-    
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-def compile_complete_docx(outline, course_info, content_dict):
-    """Compile complete as DOCX"""
-    if not DOCX_AVAILABLE:
-        return None
-    
-    buffer = BytesIO()
-    doc = Document()
-    
-    title = doc.add_heading(course_info['course_title'], 0)
-    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    doc.add_paragraph(f"Code: {course_info['course_code']} | Credits: {course_info['credits']}")
-    doc.add_page_break()
-    
-    for unit in outline:
-        unit_heading = doc.add_heading(f"UNIT {unit['unit_number']}: {unit['unit_title']}", level=1)
-        
-        for section in unit.get('sections', []):
-            sec_key = f"{section['section_number']} {section['section_title']}"
-            doc.add_heading(sec_key, level=2)
-            
-            content = content_dict.get(sec_key, "[Not generated]")
-            image = st.session_state.images.get(sec_key)
-            
-            if image:
-                try:
-                    img_bytes = image.read()
-                    doc.add_picture(BytesIO(img_bytes), width=Inches(4))
-                except:
-                    pass
-            
-            doc.add_paragraph(content)
-            doc.add_page_break()
-    
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
-
-def create_default_outline(num_units, sections_per_unit):
-    """Create default outline"""
-    outline = []
-    
-    base_topics = [
-        {"title": "Introduction and Foundations", "sections": [
-            ("Introduction", "Overview"), ("Objectives", "Goals"),
-            ("Meaning", "Definitions"), ("History", "Evolution"),
-            ("Approaches", "Theories"), ("Applications", "Uses"),
-            ("Importance", "Relevance"), ("Goals", "Objectives")
-        ]},
-        {"title": "Core Concepts", "sections": [
-            ("Concept 1", "First topic"), ("Concept 2", "Second topic"),
-            ("Concept 3", "Third topic"), ("Concept 4", "Fourth topic"),
-            ("Concept 5", "Fifth topic"), ("Concept 6", "Sixth topic"),
-            ("Concept 7", "Seventh topic"), ("Concept 8", "Eighth topic")
-        ]}
-    ]
-    
-    for i in range(num_units):
-        unit_num = i + 1
-        unit_title = base_topics[i % len(base_topics)]["title"]
-        section_data = base_topics[i % len(base_topics)]["sections"]
-        
-        sections = []
-        for j in range(min(sections_per_unit, len(section_data))):
-            sec_title, sec_desc = section_data[j]
-            sections.append({
-                "section_number": f"{unit_num}.{j+1}",
-                "section_title": sec_title,
-                "description": sec_desc
-            })
-        
-        outline.append({
-            "unit_number": unit_num,
-            "unit_title": unit_title,
-            "sections": sections
-        })
-    
-    return outline
-
-def show_syllabus_upload_page():
-    """Syllabus upload page"""
-    st.header("📄 Step 1: Syllabus Upload")
-    
-    choice = st.radio("Choose:", ["Upload Syllabus", "Skip"], key="upload_choice")
-    
-    if choice == "Upload Syllabus":
-        if PYPDF2_AVAILABLE:
-            uploaded = st.file_uploader("Upload PDF", type=['pdf'], key="syllabus_file")
-            
-            if uploaded:
-                with st.spinner("Extracting..."):
-                    text = extract_pdf_text(uploaded)
-                    
-                    if text:
-                        st.success("✅ Extracted!")
-                        structure = parse_syllabus_structure(text)
-                        st.session_state.extracted_structure = structure
-                        
-                        if structure['units']:
-                            st.success(f"Found {len(structure['units'])} units")
-                            
-                            for unit in structure['units']:
-                                with st.expander(f"Unit {unit['unit_number']}: {unit['unit_title']}"):
-                                    for i, topic in enumerate(unit['topics'], 1):
-                                        st.write(f"{i}. {topic}")
-                            
-                            if st.checkbox("✅ Looks good"):
-                                if st.button("Continue", type="primary"):
-                                    st.session_state.step = 'configuration'
-                                    st.rerun()
-        else:
-            st.error("PyPDF2 not installed")
-            if st.button("Continue Anyway"):
-                st.session_state.step = 'configuration'
-                st.rerun()
-    else:
-        if st.button("Continue", type="primary"):
-            st.session_state.step = 'configuration'
-            st.rerun()
-
-def show_configuration_page():
-    """Configuration page"""
-    st.header("⚙️ Step 2: Configuration")
-    
-    # API
-    st.subheader("🔑 API Configuration")
-    
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        api_key = st.text_input(
-            "Grok API Key",
-            value=st.session_state.api_key,
-            type="password",
-            key="api_key_input",
-            help="Your Grok API key from x.ai"
-        )
-        st.session_state.api_key = api_key
-        
-        if api_key and api_key.startswith('xai-'):
-            st.success("✅ Valid API key format")
-        else:
-            st.warning("⚠️ API key should start with 'xai-'")
-    
-    with col2:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
-        if st.button("🧪 Test API", use_container_width=True, key="test_api_btn"):
-            with st.expander("🔍 API Test Results", expanded=True):
-                st.info("Testing API connection and response quality...")
-                
-                test_messages = [
-                    {"role": "system", "content": "You are a helpful academic content generator."},
-                    {"role": "user", "content": "Write a 200-word introduction about Organizational Behaviour. Include: definition, importance, and key concepts. Use academic tone."}
-                ]
-                
-                test_response = make_api_call(test_messages, max_tokens=500)
-                
-                if test_response:
-                    st.success("✅ API is working!")
-                    st.write("**Response Preview:**")
-                    st.write(test_response[:300] + "...")
-                    
-                    # Quality checks
-                    word_count = len(test_response.split())
-                    if word_count >= 150:
-                        st.success(f"✅ Good response length: {word_count} words")
-                    else:
-                        st.warning(f"⚠️ Response seems short: {word_count} words")
-                    
-                    if len(test_response) > 100:
-                        st.success("✅ API returning substantial content")
-                        st.info("💡 Your API is ready for curriculum generation!")
-                    else:
-                        st.error("❌ API response too short - check configuration")
-                else:
-                    st.error("❌ API test failed - check logs above for details")
-                    st.error("🔍 Common issues:")
-                    st.error("   - Invalid API key")
-                    st.error("   - Rate limiting")
-                    st.error("   - Network connection")
-                    st.error("   - API service down")
-    
-    # Course details
-    st.subheader("Course Details")
-    
-    extracted = st.session_state.get('extracted_structure', {})
-    course_info = extracted.get('course_info', {})
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        title = st.text_input("Title", value=course_info.get('title', st.session_state.course_title), key="title_input")
-        st.session_state.course_title = title
-        
-        code = st.text_input("Code", value=course_info.get('code', st.session_state.course_code), key="code_input")
-        st.session_state.course_code = code
-    
-    with col2:
-        credits = st.number_input("Credits", min_value=1, max_value=10, value=st.session_state.credits, key="credits_input")
-        st.session_state.credits = credits
-        
-        audience = st.selectbox("Audience", ["Postgraduate (MBA)", "Undergraduate"], key="audience_select")
-        st.session_state.target_audience = audience
-    
-    # Document heading and logo
-    st.subheader("📄 Document Customization")
-    document_heading = st.text_input("Document Header (Optional)", value=st.session_state.document_heading, key="doc_heading")
-    st.session_state.document_heading = document_heading
-    
-    logo = st.file_uploader("Upload Logo (for header)", type=['png', 'jpg', 'jpeg'], key="logo_uploader")
-    if logo:
-        st.session_state.logo = logo
-        st.success("✅ Logo uploaded")
-    elif st.session_state.logo:
-        st.info("✅ Logo from previous session")
-    
-    # Academic mappings
-    st.subheader("🎯 Academic Mappings (Optional)")
-    st.info("💡 These mappings enhance content quality and alignment. Leave blank if not needed.")
-    
-    with st.expander("ℹ️ What are PEO, PO, CO, PSO?", expanded=False):
-        st.markdown("""
-        **Program Educational Objectives (PEO):** What students can do after completing the entire program
-        
-        **Program Outcomes (PO):** Skills and knowledge students gain from the program
-        - Example: PO1: Critical thinking, PO2: Communication skills, PO3: Ethical awareness
-        
-        **Course Learning Objectives/Outcomes (CLO/CO):** What students learn in THIS specific course
-        - Example: CO1: Understand OB concepts [Bloom: Understand], CO2: Apply leadership theories [Bloom: Apply]
-        
-        **Specialized Program Outcomes (PSO):** Specialized skills specific to the program (e.g., MBA-specific)
-        - Example: PSO1: Strategic management, PSO2: Business analytics
-        """)
-    
-    peo = st.text_area(
-        "Program Educational Objectives (PEO)",
-        value=st.session_state.program_objectives,
-        placeholder="Example:\n- Develop strategic leadership capabilities\n- Foster analytical decision-making skills\n- Build effective communication abilities\n\n(Leave blank if not required)",
-        help="What students should achieve after completing the program",
-        key="peo_input",
-        height=120
-    )
-    st.session_state.program_objectives = peo
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        po = st.text_area(
-            "Program Outcomes (PO)",
-            value=st.session_state.program_outcomes,
-            placeholder="Example:\nPO1: Critical thinking and problem-solving\nPO2: Effective communication\nPO3: Ethical decision-making\nPO4: Teamwork and collaboration\n\n(Leave blank if not required)",
-            help="Skills and knowledge from the program",
-            key="po_input",
-            height=150
-        )
-        st.session_state.program_outcomes = po
-    
-    with col2:
-        pso = st.text_area(
-            "Specialized Program Outcomes (PSO)",
-            value=st.session_state.specialized_outcomes,
-            placeholder="Example:\nPSO1: Advanced managerial skills\nPSO2: Strategic HR management\nPSO3: Organizational leadership\nPSO4: Change management expertise\n\n(Leave blank if not required)",
-            help="Specialized skills for this specific program",
-            key="pso_input",
-            height=150
-        )
-        st.session_state.specialized_outcomes = pso
-    
-    co = st.text_area(
-        "Course Learning Objectives & Outcomes (CLO/CO)",
-        value=st.session_state.course_outcomes,
-        placeholder="Example:\nCO1: Understand key organizational behaviour concepts [Bloom: Understand]\nCO2: Apply OB theories to real-world scenarios [Bloom: Apply]\nCO3: Analyze organizational dynamics and culture [Bloom: Analyze]\nCO4: Evaluate organizational strategies and interventions [Bloom: Evaluate]\n\n(Leave blank if not required)",
-        help="What students will learn in THIS specific course",
-        key="co_input",
-        height=150
-    )
-    st.session_state.course_outcomes = co
-    
-    if peo or po or co or pso:
-        st.success("✅ Academic mappings will be integrated into content generation")
-    else:
-        st.info("ℹ️ Content will be generated with general academic outcomes")
-    
-    st.divider()
-    
-    # Content Structure (only if no syllabus uploaded)
-    if not st.session_state.get('extracted_structure'):
-        st.subheader("📚 Content Structure")
-        st.info("💡 Define how many units and topics you want. AI will generate relevant content for each.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            num_units = st.number_input(
-                "Number of Units",
-                min_value=1,
-                max_value=10,
-                value=st.session_state.get('num_units', 4),
-                help="How many major units/modules for this course",
-                key="num_units_config"
-            )
-            st.session_state.num_units = num_units
-        
-        with col2:
-            sections_per_unit = st.number_input(
-                "Topics per Unit",
-                min_value=3,
-                max_value=15,
-                value=st.session_state.get('sections_per_unit', 8),
-                help="How many topics/sections in each unit",
-                key="sections_per_unit_config"
-            )
-            st.session_state.sections_per_unit = sections_per_unit
-        
-        total_sections = num_units * sections_per_unit
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Sections", total_sections)
-        with col2:
-            st.metric("Est. Pages", f"~{total_sections * 5}")  # 5 pages per section estimate
-        
-        st.caption(f"💡 AI will generate {num_units} units with {sections_per_unit} topics each")
-    else:
-        st.info("✅ Using structure from uploaded syllabus")
-    
-    # Google Drive
-    st.subheader("Google Drive")
-    
-    if GDRIVE_AVAILABLE:
-        folder_url = st.text_input("Folder URL/ID", value=st.session_state.gdrive_folder_url, key="folder_input")
-        st.session_state.gdrive_folder_url = folder_url
-        
-        if folder_url:
-            folder_id = extract_folder_id_from_url(folder_url)
-            if folder_id:
-                st.session_state.gdrive_folder_id = folder_id
-                st.success(f"✅ ID: {folder_id}")
-                st.info("Share with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
-    
-    st.divider()
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("← Back"):
-            st.session_state.step = 'syllabus_upload'
-            st.rerun()
-    with col2:
-        if st.button("Next →", type="primary"):
-            st.session_state.step = 'outline_generation'
-            st.rerun()
-
-def show_outline_page():
-    """Outline page - AI generated ONLY"""
-    st.header("📋 Step 3: Course Outline")
-    
-    # Check if we need to generate outline
-    if 'outline' not in st.session_state or st.session_state.outline is None:
-        
-        # Check if extracted from syllabus
-        extracted = st.session_state.get('extracted_structure')
-        
-        if extracted and extracted.get('units'):
-            st.info("✅ Using syllabus structure")
-            outline = []
-            for unit in extracted['units']:
-                sections = []
-                for i, topic in enumerate(unit['topics'], 1):
-                    sections.append({
-                        "section_number": f"{unit['unit_number']}.{i}",
-                        "section_title": topic,
-                        "description": topic
-                    })
-                
-                outline.append({
-                    "unit_number": unit['unit_number'],
-                    "unit_title": unit['unit_title'],
-                    "sections": sections
-                })
-            st.session_state.outline = outline
-            
-        else:
-            # MUST generate with AI - NO DEFAULTS
-            st.warning("⚠️ No outline generated yet")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🤖 Generate with AI", type="primary", use_container_width=True, key="generate_ai_outline"):
-                    with st.spinner("🤖 AI is creating your course outline..."):
-                        generated_outline = generate_outline_with_ai()
-                        
-                        if generated_outline:
-                            st.session_state.outline = generated_outline
-                            st.success("✅ Outline generated!")
-                            st.rerun()
-                        else:
-                            st.error("❌ AI generation failed. Please try again or check your API key.")
-                            return
-            
-            with col2:
-                if st.button("← Back to Configuration", use_container_width=True, key="back_no_outline"):
-                    st.session_state.step = 'configuration'
-                    st.rerun()
-            
-            st.info("💡 Click 'Generate with AI' to create a custom outline based on your course details")
-            return
-    
-    # Display outline
-    outline = st.session_state.outline
-    total_sections = sum(len(u.get('sections', [])) for u in outline)
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Units", len(outline))
-    with col2:
-        st.metric("Sections", total_sections)
-    with col3:
-        st.metric("Est. Pages", f"~{total_sections * 5}")
-    
-    st.divider()
-    
-    # Edit outline
-    rows = []
-    for unit in outline:
-        for section in unit.get('sections', []):
-            rows.append({
-                'Unit': unit['unit_number'],
-                'Unit Title': unit['unit_title'],
-                'Section': section['section_number'],
-                'Section Title': section['section_title'],
-                'Description': section['description']
-            })
-    
-    st.subheader("✏️ Edit Outline")
-    st.caption("Click any cell to edit directly")
-    edited = st.data_editor(rows, num_rows="dynamic", use_container_width=True, height=400, key="outline_editor_unique")
-    
-    st.divider()
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("← Back", use_container_width=True, key="back_from_outline"):
-            st.session_state.step = 'configuration'
-            st.rerun()
-    
-    with col2:
-        if st.button("🔄 Regenerate", use_container_width=True, key="regen_outline_btn"):
-            # Clear outline and regenerate with AI
-            st.session_state.outline = None
-            st.rerun()
-    
-    with col3:
-        if st.button("✅ Approve & Generate Content", type="primary", use_container_width=True, key="approve_outline_btn"):
-            # Convert edited data back to outline format
-            approved = []
-            current = None
-            
-            # Handle both list and dict formats
-            if isinstance(edited, dict):
-                edited = edited.get('data', edited)
-            
-            for row in edited:
-                unit_num = row.get('Unit') if isinstance(row, dict) else row['Unit']
-                unit_title = row.get('Unit Title') if isinstance(row, dict) else row['Unit Title']
-                section_num = row.get('Section') if isinstance(row, dict) else row['Section']
-                section_title = row.get('Section Title') if isinstance(row, dict) else row['Section Title']
-                description = row.get('Description') if isinstance(row, dict) else row['Description']
-                
-                if current is None or current['unit_number'] != unit_num:
-                    if current:
-                        approved.append(current)
-                    current = {
-                        'unit_number': unit_num,
-                        'unit_title': unit_title,
-                        'sections': []
-                    }
-                
-                current['sections'].append({
-                    'section_number': section_num,
-                    'section_title': section_title,
-                    'description': description
-                })
-            
-            if current:
-                approved.append(current)
-            
-            st.session_state.approved_outline = approved
-            st.session_state.images = {}  # Reset images
-            st.session_state.step = 'content_generation'
-            st.rerun()
+    return make_api_call(messages, max_tokens=2500)
 
 def generate_outline_with_ai():
-    """Generate outline using AI - NO DEFAULTS"""
+    """
+    Generate course outline using AI based on course configuration
     
+    Returns:
+        list: Outline with units and sections, or None if failed
+    """
     num_units = st.session_state.get('num_units', 4)
     sections_per_unit = st.session_state.get('sections_per_unit', 8)
     
     st.write(f"🎯 Generating {num_units} units with {sections_per_unit} sections each...")
     
-    # Build PO/CO/PSO context
+    # Build outcomes context
     outcomes_context = ""
     if st.session_state.program_objectives:
         outcomes_context += f"\n**Program Objectives:** {st.session_state.program_objectives}"
@@ -1220,7 +886,6 @@ Return ONLY the JSON array. No additional text, no markdown code blocks, just pu
             if json_match:
                 outline_str = json_match.group(1)
             
-            # Remove any leading/trailing whitespace
             outline_str = outline_str.strip()
             
             # Parse JSON
@@ -1241,7 +906,7 @@ Return ONLY the JSON array. No additional text, no markdown code blocks, just pu
                 
                 # Show preview
                 with st.expander("📋 Preview Generated Outline", expanded=False):
-                    for unit in parsed_outline[:2]:  # Show first 2 units
+                    for unit in parsed_outline[:2]:
                         st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
                         for section in unit.get('sections', [])[:3]:
                             st.write(f"  - {section['section_number']} {section['section_title']}")
@@ -1261,338 +926,536 @@ Return ONLY the JSON array. No additional text, no markdown code blocks, just pu
     st.error("❌ AI did not return any content")
     return None
 
-def show_content_generation_page():
-    """Content generation page"""
-    st.header("✍️ Step 4: Content Generation")
+def generate_image_prompt_for_section(section_info, course_context):
+    """
+    Generate a detailed image generation prompt for a section
     
-    if 'approved_outline' not in st.session_state:
-        st.error("No outline")
-        if st.button("← Back", key="back_no_outline_gen"):
-            st.session_state.step = 'outline_generation'
-            st.rerun()
-        return
-    
-    # Initialize
-    if 'content' not in st.session_state or not st.session_state.content:
-        st.session_state.content = {}
-        st.session_state.sections_to_process = []
-        st.session_state.generation_start_time = time.time()
+    Args:
+        section_info: Dict with section details
+        course_context: Dict with course context
         
-        for unit in st.session_state.approved_outline:
-            for section in unit.get('sections', []):
-                st.session_state.sections_to_process.append({
-                    'unit_number': unit['unit_number'],
-                    'unit_title': unit['unit_title'],
-                    'section_number': section['section_number'],
-                    'section_title': section['section_title'],
-                    'description': section.get('description', '')
-                })
-    
-    total = len(st.session_state.sections_to_process)
-    completed = len(st.session_state.content)
-    
-    # Progress
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Completed", f"{completed}/{total}")
-    with col2:
-        progress = (completed / total * 100) if total > 0 else 0
-        st.metric("Progress", f"{progress:.0f}%")
-    with col3:
-        st.metric("Remaining", total - completed)
-    with col4:
-        if completed > 0:
-            elapsed = time.time() - st.session_state.generation_start_time
-            avg = elapsed / completed
-            eta = int((avg * (total - completed)) / 60)
-            st.metric("ETA", f"~{eta}min")
-    
-    st.progress(completed / total if total > 0 else 0)
-    
-    # Generate
-    if completed < total:
-        current = st.session_state.sections_to_process[completed]
-        section_key = f"{current['section_number']} {current['section_title']}"
-        
-        st.info(f"🤖 Generating: **{section_key}**")
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write(f"Description: {current['description']}")
-        with col2:
-            if st.button("⏸️ Pause", key="pause_gen"):
-                st.session_state.paused = True
-                st.rerun()
-        
-        if not st.session_state.paused:
-            with st.spinner(f"Writing {completed + 1} of {total}..."):
-                context = {
-                    'course_title': st.session_state.course_title,
-                    'course_code': st.session_state.course_code,
-                    'credits': st.session_state.credits,
-                    'target_audience': st.session_state.target_audience,
-                    'program_objectives': st.session_state.program_objectives,
-                    'program_outcomes': st.session_state.program_outcomes,
-                    'course_outcomes': st.session_state.course_outcomes,
-                    'specialized_outcomes': st.session_state.specialized_outcomes
-                }
-                
-                content = generate_content(current, context)
-                
-                if content and len(content.strip()) > 100:
-                    st.session_state.content[section_key] = content
-                    st.success(f"✅ Content generated for {section_key}")
-                    
-                    # Image upload for this section
-                    uploaded_image = st.file_uploader(f"Upload image for {section_key} (optional)", type=['png', 'jpg', 'jpeg'], key=f"image_{completed}")
-                    if uploaded_image:
-                        st.session_state.images[section_key] = uploaded_image
-                        st.success("✅ Image added")
-                    
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Generation failed")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("🔄 Retry", key="retry_gen"):
-                            st.rerun()
-                    with col2:
-                        if st.button("⏭️ Skip", key="skip_gen"):
-                            st.session_state.content[section_key] = "[Skipped]"
-                            st.rerun()
-        else:
-            st.warning("⏸️ Paused")
-            if st.button("▶️ Resume", type="primary", key="resume_gen"):
-                st.session_state.paused = False
-                st.rerun()
-    else:
-        total_words = sum(len(c.split()) for c in st.session_state.content.values())
-        est_pages = total_words // 300 + 1 if total_words > 0 else 0
-        
-        st.success("🎉 All Content Generated!")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Words", f"{total_words:,}")
-        with col2:
-            st.metric("Sections", total)
-        with col3:
-            st.metric("Est. Pages", f"~{est_pages}")
-        
-        st.divider()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("← Back", key="back_from_gen"):
-                st.session_state.step = 'outline_generation'
-                st.rerun()
-        with col2:
-            if st.button("📄 Compile Outputs", type="primary", key="go_compile"):
-                st.session_state.step = 'compilation'
-                st.rerun()
+    Returns:
+        str: Image generation prompt
+    """
+    system_prompt = """You are an expert at creating detailed image generation prompts for educational content.
 
-def show_compilation_page():
-    """Compilation page"""
-    st.header("📄 Step 5: Compile Outputs")
+Create a detailed, specific prompt that can be used with AI image generators like DALL-E, Midjourney, or Stable Diffusion.
+
+The prompt should:
+- Be specific and descriptive
+- Include style (e.g., "professional diagram", "infographic", "illustration")
+- Mention colors if relevant
+- Specify composition and layout
+- Be suitable for educational materials
+- Be 2-3 sentences maximum"""
+
+    user_prompt = f"""Create an image generation prompt for this educational section:
+
+**Section:** {section_info['section_number']} {section_info['section_title']}
+**Course:** {course_context['course_title']}
+**Description:** {section_info['description']}
+**Audience:** {course_context['target_audience']}
+
+Generate a detailed prompt for ONE relevant educational image."""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
     
-    if 'content' not in st.session_state or not st.session_state.content:
-        st.error("No content")
-        if st.button("← Back", key="back_no_content"):
-            st.session_state.step = 'content_generation'
-            st.rerun()
-        return
+    prompt = make_api_call(messages, max_tokens=200)
+    return prompt if prompt else f"Educational diagram about {section_info['section_title']}"
+
+# ============================================================================
+# PDF COMPILATION WITH IMAGES
+# ============================================================================
+
+def add_header_footer(canvas, doc, course_info, logo=None):
+    """
+    Add header and footer to PDF pages
     
-    if 'approved_outline' not in st.session_state:
-        st.error("No outline")
-        if st.button("← Back", key="back_no_outline_comp"):
-            st.session_state.step = 'outline_generation'
-            st.rerun()
-        return
+    Args:
+        canvas: ReportLab canvas
+        doc: Document template
+        course_info: Course information dict
+        logo: Logo image file or None
+    """
+    canvas.saveState()
     
-    # Summary
-    st.subheader("Summary")
+    # Header - Document heading
+    heading = st.session_state.get('document_heading', course_info.get('course_title', ''))
+    if heading:
+        canvas.setFont("Helvetica-Bold", 11)
+        canvas.drawString(72, doc.height + 50, heading[:80])
     
-    total_sections = len(st.session_state.content)
-    total_words = sum(len(c.split()) for c in st.session_state.content.values())
-    est_pages = total_words // 300 + 1 if total_words > 0 else 0
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Units", len(st.session_state.approved_outline))
-    with col2:
-        st.metric("Sections", total_sections)
-    with col3:
-        st.metric("Words", f"{total_words:,}")
-    with col4:
-        st.metric("Est. Pages", f"~{est_pages}")
-    
-    st.divider()
-    
-    # Options
-    col1, col2 = st.columns(2)
-    with col1:
-        compile_type = st.radio("Output Type:", ["Unit Files", "Complete File", "Both"], index=2, key="compile_type")
-    with col2:
-        output_format = st.radio("Format:", ["PDF", "DOCX (Editable)"], index=0, key="output_format")
-    
-    upload_drive = False
-    if GDRIVE_AVAILABLE and st.session_state.gdrive_folder_id:
-        upload_drive = st.checkbox("📤 Upload to Google Drive (One-click for all)", value=True, key="upload_drive")
-        if upload_drive:
-            st.info("💡 DOCX files will be editable in Google Docs when uploaded")
-    
-    st.divider()
-    
-    if st.button("🔨 Start Compilation & Upload", type="primary", key="start_compile"):
-        course_info = {
-            'course_title': st.session_state.course_title,
-            'course_code': st.session_state.course_code,
-            'credits': st.session_state.credits,
-            'target_audience': st.session_state.target_audience
-        }
-        
-        # Setup Drive
-        gdrive_service = None
-        gdrive_folder_id = None
-        drive_links = {}
-        
-        if upload_drive:
-            with st.spinner("Connecting to Drive..."):
-                gdrive_service = setup_google_drive_connection()
-                if gdrive_service:
-                    st.success("✅ Connected to Drive")
-                    folder_name = f"{st.session_state.course_code}_{datetime.now().strftime('%Y%m%d_%H%M')}"
-                    gdrive_folder_id = create_or_use_folder(
-                        gdrive_service,
-                        folder_name,
-                        st.session_state.gdrive_folder_id
-                    )
-                    if gdrive_folder_id:
-                        st.success(f"✅ Folder: {folder_name}")
-                    else:
-                        st.error("❌ Folder creation failed - continuing without upload")
-                        upload_drive = False
-                else:
-                    st.error("❌ Drive connection failed - continuing without upload")
-                    upload_drive = False
-        
-        # Compile
-        compiled_files = {}
-        mime_type = 'application/pdf' if output_format == "PDF" else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        ext = '.pdf' if output_format == "PDF" else '.docx'
-        
-        if compile_type in ["Unit Files", "Both"]:
-            st.subheader("Compiling Units")
-            progress_bar = st.progress(0)
+    # Logo in header (top right)
+    if logo:
+        try:
+            logo.seek(0)
+            logo_bytes = logo.read()
+            logo_buffer = BytesIO(logo_bytes)
+            img = PilImage.open(logo_buffer)
             
-            for i, unit in enumerate(st.session_state.approved_outline):
-                with st.spinner(f"Unit {unit['unit_number']}..."):
-                    if output_format == "PDF":
-                        file_buffer = compile_unit_pdf(unit, course_info, st.session_state.content)
-                    else:
-                        file_buffer = compile_unit_docx(unit, course_info, st.session_state.content)
-                    
-                    if file_buffer:
-                        filename = f"Unit_{unit['unit_number']}_{unit['unit_title'].replace(' ', '_')[:30]}{ext}"
-                        compiled_files[f"Unit_{unit['unit_number']}"] = {
-                            'buffer': file_buffer,
-                            'filename': filename
-                        }
-                        
-                        st.success(f"✅ {output_format} for Unit {unit['unit_number']}")
-                        
-                        # Upload to Drive
-                        if upload_drive and gdrive_service and gdrive_folder_id:
-                            file_buffer.seek(0)
-                            link = upload_to_gdrive(gdrive_service, file_buffer, filename, gdrive_folder_id, mime_type)
-                            if link:
-                                drive_links[f"Unit_{unit['unit_number']}"] = link
-                                st.success(f"📤 Uploaded to Drive")
-                            else:
-                                st.warning("⚠️ Upload failed for this file")
-                
-                progress_bar.progress((i + 1) / len(st.session_state.approved_outline))
+            # Save as temporary file for ReportLab
+            temp_logo = BytesIO()
+            img.save(temp_logo, format='PNG')
+            temp_logo.seek(0)
+            
+            canvas.drawImage(
+                temp_logo,
+                doc.width - 1.5*inch + 72,
+                doc.height + 30,
+                width=1.2*inch,
+                height=0.6*inch,
+                preserveAspectRatio=True,
+                mask='auto'
+            )
+        except Exception as e:
+            pass  # Ignore logo errors
+    
+    # Footer - Page number and date
+    canvas.setFont("Helvetica", 9)
+    page_text = f"Page {doc.page}"
+    canvas.drawString(doc.width / 2 + 20, 40, page_text)
+    
+    date_text = f"Generated: {datetime.now().strftime('%Y-%m-%d')}"
+    canvas.drawString(72, 40, date_text)
+    
+    canvas.restoreState()
+
+def create_decorative_line():
+    """Create decorative line table for PDF"""
+    if not REPORTLAB_AVAILABLE:
+        return None
         
-        if compile_type in ["Complete File", "Both"]:
-            st.subheader("Compiling Complete File")
-            with st.spinner("Complete file..."):
-                if output_format == "PDF":
-                    file_buffer = compile_complete_pdf(st.session_state.approved_outline, course_info, st.session_state.content)
-                else:
-                    file_buffer = compile_complete_docx(st.session_state.approved_outline, course_info, st.session_state.content)
+    line_table = Table([['']], colWidths=[6.5*inch])
+    line_table.setStyle(TableStyle([
+        ('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4'))
+    ]))
+    return line_table
+
+def compile_unit_pdf(unit_data, course_info, content_dict):
+    """
+    Compile a single unit into PDF with images and formatting
+    
+    Args:
+        unit_data: Unit information dict
+        course_info: Course information dict
+        content_dict: Dictionary of generated content
+        
+    Returns:
+        BytesIO: PDF buffer or None if failed
+    """
+    if not REPORTLAB_AVAILABLE:
+        st.error("ReportLab not available")
+        return None
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=1.2*inch,
+        bottomMargin=1*inch
+    )
+    
+    # Add header/footer callback
+    def add_page_elements(canvas, doc):
+        add_header_footer(canvas, doc, course_info, st.session_state.get('logo'))
+    
+    doc.build.__defaults__ = (None, add_page_elements, add_page_elements)
+    
+    story = []
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=colors.HexColor('#1f77b4'),
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold',
+        spaceAfter=30,
+        spaceBefore=20
+    )
+    
+    section_style = ParagraphStyle(
+        'SectionHeading',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=colors.HexColor('#2c3e50'),
+        fontName='Helvetica-Bold',
+        spaceAfter=12,
+        spaceBefore=12
+    )
+    
+    subsection_style = ParagraphStyle(
+        'Subsection',
+        parent=styles['Heading3'],
+        fontSize=13,
+        textColor=colors.HexColor('#34495e'),
+        fontName='Helvetica-Bold',
+        spaceAfter=10,
+        spaceBefore=10
+    )
+    
+    body_style = ParagraphStyle(
+        'BodyText',
+        parent=styles['BodyText'],
+        fontSize=11,
+        alignment=TA_JUSTIFY,
+        spaceAfter=8,
+        leading=14,
+        fontName='Helvetica'
+    )
+    
+    # Cover page
+    story.append(Spacer(1, 1*inch))
+    story.append(Paragraph(f"UNIT {unit_data['unit_number']}", styles['Heading2']))
+    story.append(Spacer(1, 0.2*inch))
+    story.append(Paragraph(unit_data['unit_title'].upper(), title_style))
+    story.append(Spacer(1, 0.5*inch))
+    
+    # Decorative line
+    if create_decorative_line():
+        story.append(create_decorative_line())
+        story.append(Spacer(1, 0.3*inch))
+    
+    story.append(Paragraph(course_info.get('course_title', ''), styles['Heading3']))
+    story.append(Paragraph(f"Course Code: {course_info.get('course_code', 'N/A')}", styles['Normal']))
+    story.append(Paragraph(f"Credits: {course_info.get('credits', 3)}", styles['Normal']))
+    story.append(PageBreak())
+    
+    # Content sections
+    for section in unit_data.get('sections', []):
+        sec_key = f"{section['section_number']} {section['section_title']}"
+        
+        # Section heading
+        story.append(Paragraph(f"<b>{sec_key}</b>", section_style))
+        if create_decorative_line():
+            story.append(create_decorative_line())
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Add image if available
+        image_data = st.session_state.images.get(sec_key)
+        if image_data:
+            try:
+                image_data.seek(0)
+                img_bytes = image_data.read()
+                img_buffer = BytesIO(img_bytes)
                 
-                if file_buffer:
-                    filename = f"{st.session_state.course_code}_Complete_Curriculum{ext}"
-                    compiled_files['Complete'] = {
-                        'buffer': file_buffer,
-                        'filename': filename
-                    }
-                    st.success(f"✅ {output_format} Complete file ready")
-                    
-                    # Upload to Drive
-                    if upload_drive and gdrive_service and gdrive_folder_id:
-                        file_buffer.seek(0)
-                        link = upload_to_gdrive(gdrive_service, file_buffer, filename, gdrive_folder_id, mime_type)
-                        if link:
-                            drive_links['Complete'] = link
-                            st.success("📤 Complete file uploaded to Drive")
+                # Add image to PDF
+                story.append(Image(img_buffer, width=4*inch, height=2.5*inch))
+                story.append(Spacer(1, 0.2*inch))
+            except Exception as e:
+                st.warning(f"⚠️ Could not add image for {sec_key}: {str(e)}")
+        
+        # Content
+        content = content_dict.get(sec_key, "[Content not generated]")
+        content_lines = content.split('\n')
+        
+        for line in content_lines:
+            line = line.strip()
+            if not line:
+                story.append(Spacer(1, 6))
+                continue
+            
+            # Handle different content types
+            if 'CHECK YOUR PROGRESS' in line.upper():
+                story.append(Paragraph("<b>CHECK YOUR PROGRESS</b>", subsection_style))
+                story.append(Spacer(1, 0.1*inch))
+            elif line.startswith('## '):
+                clean_line = clean_text_for_pdf(line[3:])
+                story.append(Paragraph(clean_line, subsection_style))
+            elif line.startswith(('*', '-', '•', '1.', '2.', '3.')):
+                clean_line = clean_text_for_pdf(re.sub(r'^[\*\-•\d\.]\s*', '', line))
+                story.append(Paragraph(f"• {clean_line}", body_style))
+            else:
+                clean_line = clean_text_for_pdf(line)
+                if len(clean_line) > 3:
+                    try:
+                        story.append(Paragraph(clean_line, body_style))
+                    except Exception as e:
+                        # Fallback for problematic content
+                        story.append(Paragraph(line[:500], body_style))
+        
+        story.append(Spacer(1, 0.5*inch))
+        story.append(PageBreak())
+    
+    try:
+        doc.build(story, onFirstPage=add_page_elements, onLaterPages=add_page_elements)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"❌ PDF compilation error: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None
+
+def compile_complete_pdf(outline, course_info, content_dict):
+    """
+    Compile complete course PDF with all units
+    
+    Args:
+        outline: Complete course outline
+        course_info: Course information
+        content_dict: All generated content
+        
+    Returns:
+        BytesIO: Complete PDF buffer or None
+    """
+    if not REPORTLAB_AVAILABLE:
+        st.error("ReportLab not available")
+        return None
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=1.2*inch,
+        bottomMargin=1*inch
+    )
+    
+    def add_page_elements(canvas, doc):
+        add_header_footer(canvas, doc, course_info, st.session_state.get('logo'))
+    
+    story = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'Title',
+        parent=styles['Title'],
+        fontSize=28,
+        alignment=TA_CENTER,
+        spaceAfter=40,
+        fontName='Helvetica-Bold'
+    )
+    
+    # Title page
+    story.append(Spacer(1, 2*inch))
+    story.append(Paragraph(course_info['course_title'], title_style))
+    story.append(Spacer(1, 0.3*inch))
+    story.append(Paragraph(
+        f"Course Code: {course_info['course_code']} | Credits: {course_info['credits']}",
+        styles['Normal']
+    ))
+    story.append(Spacer(1, 2*inch))
+    story.append(Paragraph("Complete Curriculum", styles['Heading1']))
+    story.append(PageBreak())
+    
+    # All units content
+    for unit in outline:
+        # Process each unit similarly to compile_unit_pdf
+        story.append(Paragraph(
+            f"UNIT {unit['unit_number']}: {unit['unit_title']}",
+            styles['Heading1']
+        ))
+        story.append(PageBreak())
+        
+        for section in unit.get('sections', []):
+            sec_key = f"{section['section_number']} {section['section_title']}"
+            story.append(Paragraph(sec_key, styles['Heading2']))
+            
+            # Add image if available
+            image_data = st.session_state.images.get(sec_key)
+            if image_data:
+                try:
+                    image_data.seek(0)
+                    img_bytes = image_data.read()
+                    img_buffer = BytesIO(img_bytes)
+                    story.append(Image(img_buffer, width=4*inch, height=2.5*inch))
+                    story.append(Spacer(1, 0.2*inch))
+                except:
+                    pass
+            
+            content = content_dict.get(sec_key, "[Not generated]")
+            clean_content = clean_text_for_pdf(content)
+            
+            # Add content paragraphs
+            for para in clean_content.split('\n'):
+                if para.strip():
+                    try:
+                        story.append(Paragraph(para, styles['Normal']))
+                    except:
+                        pass
+            
+            story.append(PageBreak())
+    
+    try:
+        doc.build(story, onFirstPage=add_page_elements, onLaterPages=add_page_elements)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"❌ Complete PDF error: {str(e)}")
+        return None
+
+# ============================================================================
+# DOCX COMPILATION WITH IMAGES
+# ============================================================================
+
+def compile_unit_docx(unit_data, course_info, content_dict):
+    """
+    Compile unit as editable DOCX with images
+    
+    Args:
+        unit_data: Unit information
+        course_info: Course information
+        content_dict: Generated content
+        
+    Returns:
+        BytesIO: DOCX buffer or None
+    """
+    if not DOCX_AVAILABLE:
+        st.error("python-docx not available")
+        return None
+    
+    buffer = BytesIO()
+    doc = Document()
+    
+    # Title
+    title = doc.add_heading(f"UNIT {unit_data['unit_number']}: {unit_data['unit_title']}", 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    
+    # Course info
+    doc.add_paragraph(
+        f"Course: {course_info['course_title']} | "
+        f"Code: {course_info['course_code']} | "
+        f"Credits: {course_info['credits']}"
+    )
+    doc.add_page_break()
+    
+    # Content sections
+    for section in unit_data.get('sections', []):
+        sec_key = f"{section['section_number']} {section['section_title']}"
+        
+        # Section heading
+        doc.add_heading(sec_key, level=1)
+        
+        # Add image if available
+        image_data = st.session_state.images.get(sec_key)
+        if image_data:
+            try:
+                image_data.seek(0)
+                img_bytes = image_data.read()
+                doc.add_picture(BytesIO(img_bytes), width=Inches(4.5))
+                doc.add_paragraph()  # Space after image
+            except Exception as e:
+                st.warning(f"⚠️ Could not add image to DOCX: {str(e)}")
+        
+        # Add content
+        content = content_dict.get(sec_key, "[Not generated]")
+        
+        for line in content.split('\n'):
+            line = line.strip()
+            if line:
+                # Simple formatting
+                if '**' in line:
+                    # Handle bold text
+                    p = doc.add_paragraph()
+                    parts = re.split(r'\*\*(.+?)\*\*', line)
+                    for i, part in enumerate(parts):
+                        if i % 2 == 1:  # Odd indices are bold
+                            run = p.add_run(part)
+                            run.bold = True
                         else:
-                            st.warning("⚠️ Upload failed for complete file")
-        
-        st.success("🎉 Compilation Complete!")
-        st.divider()
-        
-        # Downloads and Drive links
-        st.subheader("📥 Downloads & Drive Links")
-        
-        for key, data in compiled_files.items():
-            col1, col2, col3 = st.columns([2, 2, 1])
-            with col1:
-                st.write(f"**{data['filename']}**")
-            with col2:
-                if key in drive_links:
-                    st.markdown(f"[🔗 Open in Drive]({drive_links[key]})")
+                            p.add_run(part)
                 else:
-                    st.write("No Drive link")
-            with col3:
-                data['buffer'].seek(0)
-                st.download_button(
-                    "📥 Download",
-                    data=data['buffer'].getvalue(),
-                    file_name=data['filename'],
-                    mime=mime_type,
-                    key=f"dl_{key}"
-                )
+                    doc.add_paragraph(line)
         
-        st.divider()
+        doc.add_page_break()
+    
+    try:
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"❌ DOCX error: {str(e)}")
+        return None
+
+def compile_complete_docx(outline, course_info, content_dict):
+    """
+    Compile complete course as DOCX
+    
+    Args:
+        outline: Course outline
+        course_info: Course information
+        content_dict: All content
         
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("🔄 Recompile", key="recompile"):
-                st.rerun()
-        with col2:
-            if st.button("← Back", key="back_final"):
-                st.session_state.step = 'content_generation'
-                st.rerun()
-        with col3:
-            if st.button("🏠 New Project", key="new_proj"):
-                api_key = st.session_state.api_key
-                folder_url = st.session_state.gdrive_folder_url
-                st.session_state.clear()
-                initialize_session_state()
-                st.session_state.api_key = api_key
-                st.session_state.gdrive_folder_url = folder_url
-                st.rerun()
+    Returns:
+        BytesIO: DOCX buffer or None
+    """
+    if not DOCX_AVAILABLE:
+        return None
+    
+    buffer = BytesIO()
+    doc = Document()
+    
+    # Title page
+    title = doc.add_heading(course_info['course_title'], 0)
+    title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    doc.add_paragraph(
+        f"Code: {course_info['course_code']} | Credits: {course_info['credits']}"
+    )
+    doc.add_page_break()
+    
+    # All units
+    for unit in outline:
+        doc.add_heading(f"UNIT {unit['unit_number']}: {unit['unit_title']}", level=1)
+        
+        for section in unit.get('sections', []):
+            sec_key = f"{section['section_number']} {section['section_title']}"
+            doc.add_heading(sec_key, level=2)
+            
+            # Add image
+            image_data = st.session_state.images.get(sec_key)
+            if image_data:
+                try:
+                    image_data.seek(0)
+                    doc.add_picture(BytesIO(image_data.read()), width=Inches(4.5))
+                except:
+                    pass
+            
+            # Add content
+            content = content_dict.get(sec_key, "[Not generated]")
+            doc.add_paragraph(content)
+            doc.add_page_break()
+    
+    try:
+        doc.save(buffer)
+        buffer.seek(0)
+        return buffer
+    except Exception as e:
+        st.error(f"❌ Complete DOCX error: {str(e)}")
+        return None
+
+# ============================================================================
+# Phase 3 Complete
+# ============================================================================
+print("Phase 3: Content Generation and Compilation loaded successfully")"""
+PHASE 4: USER INTERFACE PAGES (PART 1)
+========================================
+- Syllabus upload page
+- Configuration page with PEO/PO/CO/PSO
+- Outline generation page
+- Navigation system
+"""
+
+# ============================================================================
+# NAVIGATION
+# ============================================================================
 
 def show_navigation():
-    """Navigation"""
+    """Display step navigation bar"""
     steps = {
         'syllabus_upload': '1️⃣ Syllabus',
         'configuration': '2️⃣ Config',
         'outline_generation': '3️⃣ Outline',
         'content_generation': '4️⃣ Content',
-        'compilation': '5️⃣ PDF'
+        'compilation': '5️⃣ Output'
     }
     
     current = st.session_state.step
@@ -1607,59 +1470,1569 @@ def show_navigation():
     
     st.divider()
 
-def main():
-    st.set_page_config(
-        page_title="AI Curriculum Generator",
-        page_icon="🎓",
-        layout="wide"
+# ============================================================================
+# PAGE 1: SYLLABUS UPLOAD
+# ============================================================================
+
+def show_syllabus_upload_page():
+    """Syllabus upload page - optional PDF upload"""
+    st.header("📄 Step 1: Syllabus Upload (Optional)")
+    
+    st.info("💡 You can upload a syllabus PDF to auto-extract structure, or skip this step to create a custom outline with AI.")
+    
+    choice = st.radio(
+        "Choose an option:",
+        ["Upload Syllabus PDF", "Skip and Create Custom Outline"],
+        key="upload_choice"
     )
     
-    st.title("🎓 AI Curriculum Generator")
-    st.caption("Professional academic materials with eGyankosh standards")
-    
-    initialize_session_state()
-    show_navigation()
-    
-    step = st.session_state.step
-    
-    if step == 'syllabus_upload':
-        show_syllabus_upload_page()
-    elif step == 'configuration':
-        show_configuration_page()
-    elif step == 'outline_generation':
-        show_outline_page()
-    elif step == 'content_generation':
-        show_content_generation_page()
-    elif step == 'compilation':
-        show_compilation_page()
+    if choice == "Upload Syllabus PDF":
+        if PYPDF2_AVAILABLE:
+            uploaded = st.file_uploader(
+                "Upload PDF Syllabus",
+                type=['pdf'],
+                key="syllabus_file",
+                help="Upload your course syllabus PDF to automatically extract the structure"
+            )
+            
+            if uploaded:
+                with st.spinner("📖 Extracting text from PDF..."):
+                    text = extract_pdf_text(uploaded)
+                    
+                    if text:
+                        st.success("✅ Text extracted successfully!")
+                        
+                        with st.expander("📝 Preview Extracted Text", expanded=False):
+                            st.text_area("Extracted Content", text[:1000] + "...", height=200)
+                        
+                        with st.spinner("🔍 Parsing syllabus structure..."):
+                            structure = parse_syllabus_structure(text)
+                            st.session_state.extracted_structure = structure
+                            
+                            if structure['course_info']:
+                                st.success("✅ Course information extracted!")
+                                with st.expander("📋 Course Information", expanded=True):
+                                    for key, value in structure['course_info'].items():
+                                        st.write(f"**{key.title()}:** {value}")
+                            
+                            if structure['units']:
+                                st.success(f"✅ Found {len(structure['units'])} units")
+                                
+                                for unit in structure['units']:
+                                    with st.expander(f"Unit {unit['unit_number']}: {unit['unit_title']}", expanded=False):
+                                        st.write(f"**Topics ({len(unit['topics'])}):**")
+                                        for i, topic in enumerate(unit['topics'], 1):
+                                            st.write(f"{i}. {topic}")
+                                
+                                st.divider()
+                                
+                                if st.checkbox("✅ Structure looks good, use this", key="confirm_structure"):
+                                    if st.button("Continue to Configuration →", type="primary", key="continue_with_structure"):
+                                        st.session_state.step = 'configuration'
+                                        st.rerun()
+                            else:
+                                st.warning("⚠️ No units found in syllabus. You can still continue and create a custom outline.")
+                                if st.button("Continue Anyway →", type="primary"):
+                                    st.session_state.step = 'configuration'
+                                    st.rerun()
+        else:
+            st.error("❌ PyPDF2 not installed. Cannot extract PDF content.")
+            st.info("Install with: pip install PyPDF2")
+            if st.button("Continue Without Upload →", type="primary"):
+                st.session_state.step = 'configuration'
+                st.rerun()
     else:
-        st.error("Unknown step")
-        st.session_state.step = 'syllabus_upload'
-        st.rerun()
+        st.info("✅ You'll create a custom outline in the next steps using AI")
+        if st.button("Continue to Configuration →", type="primary", key="skip_upload"):
+            st.session_state.step = 'configuration'
+            st.rerun()
+
+# ============================================================================
+# PAGE 2: CONFIGURATION
+# ============================================================================
+
+def show_configuration_page():
+    """Configuration page with API, course details, and academic mappings"""
+    st.header("⚙️ Step 2: Configuration")
     
-    # Sidebar
-    with st.sidebar:
-        st.header("📊 Status")
+    # ========== API Configuration ==========
+    st.subheader("🔑 API Configuration")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        api_key = st.text_input(
+            "Grok API Key",
+            value=st.session_state.api_key,
+            type="password",
+            key="api_key_input",
+            help="Your Grok API key from x.ai - starts with 'xai-'"
+        )
+        st.session_state.api_key = api_key
         
+        if api_key and api_key.startswith('xai-'):
+            st.success("✅ Valid API key format")
+        else:
+            st.warning("⚠️ API key should start with 'xai-'")
+    
+    with col2:
+        st.write("")
+        st.write("")
+        if st.button("🧪 Test API", use_container_width=True, key="test_api_btn"):
+            with st.expander("🔍 API Test Results", expanded=True):
+                st.info("Testing API connection and response quality...")
+                
+                test_messages = [
+                    {"role": "system", "content": "You are a helpful academic content generator."},
+                    {"role": "user", "content": "Write a 200-word introduction about Organizational Behaviour. Include: definition, importance, and key concepts. Use academic tone."}
+                ]
+                
+                test_response = make_api_call(test_messages, max_tokens=500)
+                
+                if test_response:
+                    st.success("✅ API is working!")
+                    st.write("**Response Preview:**")
+                    st.write(test_response[:300] + "...")
+                    
+                    word_count = len(test_response.split())
+                    if word_count >= 150:
+                        st.success(f"✅ Good response length: {word_count} words")
+                    else:
+                        st.warning(f"⚠️ Response seems short: {word_count} words")
+                    
+                    if len(test_response) > 100:
+                        st.success("✅ API returning substantial content")
+                        st.info("💡 Your API is ready for curriculum generation!")
+                    else:
+                        st.error("❌ API response too short - check configuration")
+                else:
+                    st.error("❌ API test failed - check logs above")
+    
+    st.divider()
+    
+    # ========== Course Details ==========
+    st.subheader("📚 Course Details")
+    
+    extracted = st.session_state.get('extracted_structure', {})
+    course_info = extracted.get('course_info', {})
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        title = st.text_input(
+            "Course Title",
+            value=course_info.get('title', st.session_state.course_title),
+            key="title_input",
+            help="Full name of the course"
+        )
+        st.session_state.course_title = title
+        
+        code = st.text_input(
+            "Course Code",
+            value=course_info.get('code', st.session_state.course_code),
+            key="code_input",
+            help="Course code (e.g., MBA101, CS202)"
+        )
+        st.session_state.course_code = code
+    
+    with col2:
+        credits = st.number_input(
+            "Credits",
+            min_value=1,
+            max_value=10,
+            value=int(course_info.get('credits', st.session_state.credits)) if course_info.get('credits') else st.session_state.credits,
+            key="credits_input",
+            help="Number of credit hours"
+        )
+        st.session_state.credits = credits
+        
+        audience = st.selectbox(
+            "Target Audience",
+            ["Postgraduate (MBA)", "Undergraduate", "Diploma", "Certificate"],
+            index=0,
+            key="audience_select",
+            help="Target student level"
+        )
+        st.session_state.target_audience = audience
+    
+    st.divider()
+    
+    # ========== Document Customization ==========
+    st.subheader("📄 Document Customization")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        document_heading = st.text_input(
+            "Document Header Text (Optional)",
+            value=st.session_state.document_heading,
+            key="doc_heading",
+            help="Text to appear in the header of each page",
+            placeholder="e.g., XYZ University - MBA Program"
+        )
+        st.session_state.document_heading = document_heading
+    
+    with col2:
+        logo = st.file_uploader(
+            "Upload Logo for Header (Optional)",
+            type=['png', 'jpg', 'jpeg'],
+            key="logo_uploader",
+            help="Logo will appear in the top-right corner of each page"
+        )
+        if logo:
+            st.session_state.logo = logo
+            st.success("✅ Logo uploaded")
+            # Show preview
+            st.image(logo, width=150, caption="Logo Preview")
+        elif st.session_state.logo:
+            st.info("✅ Logo from previous session")
+    
+    st.divider()
+    
+    # ========== Content Structure ==========
+    if not st.session_state.get('extracted_structure'):
+        st.subheader("📚 Content Structure")
+        st.info("💡 Define how many units and sections you want. AI will generate relevant content for each.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            num_units = st.number_input(
+                "Number of Units",
+                min_value=1,
+                max_value=10,
+                value=st.session_state.get('num_units', 4),
+                help="How many major units/modules for this course",
+                key="num_units_config"
+            )
+            st.session_state.num_units = num_units
+        
+        with col2:
+            sections_per_unit = st.number_input(
+                "Sections per Unit",
+                min_value=3,
+                max_value=15,
+                value=st.session_state.get('sections_per_unit', 8),
+                help="How many topics/sections in each unit",
+                key="sections_per_unit_config"
+            )
+            st.session_state.sections_per_unit = sections_per_unit
+        
+        total_sections = num_units * sections_per_unit
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Units", num_units)
+        with col2:
+            st.metric("Total Sections", total_sections)
+        with col3:
+            st.metric("Est. Pages", f"~{total_sections * 5}")
+        
+        st.caption(f"💡 AI will generate {num_units} units with {sections_per_unit} topics each = {total_sections} total sections")
+    else:
+        st.info("✅ Using structure from uploaded syllabus")
+    
+    st.divider()
+    
+    # ========== Academic Mappings ==========
+    st.subheader("🎯 Academic Mappings (Optional but Recommended)")
+    
+    with st.expander("ℹ️ What are PEO, PO, CO, PSO?", expanded=False):
+        st.markdown("""
+        **Program Educational Objectives (PEO):**
+        - What students can accomplish after completing the entire program
+        - Long-term career and professional achievements
+        
+        **Program Outcomes (PO):**
+        - Skills and knowledge students gain from the program
+        - Example: PO1: Critical thinking, PO2: Communication skills, PO3: Ethical awareness
+        
+        **Course Learning Outcomes (CO):**
+        - What students learn in THIS specific course
+        - Example: CO1: Understand OB concepts [Bloom: Understand], CO2: Apply leadership theories [Bloom: Apply]
+        
+        **Program Specific Outcomes (PSO):**
+        - Specialized skills specific to the program (e.g., MBA-specific)
+        - Example: PSO1: Strategic management, PSO2: Business analytics
+        
+        These mappings help create better-aligned content and demonstrate learning outcomes.
+        """)
+    
+    st.info("💡 These mappings enhance content quality and alignment. Leave blank if not needed.")
+    
+    peo = st.text_area(
+        "Program Educational Objectives (PEO)",
+        value=st.session_state.program_objectives,
+        placeholder="Example:\n- Develop strategic leadership capabilities\n- Foster analytical decision-making skills\n- Build effective communication abilities",
+        help="What students should achieve after completing the program",
+        key="peo_input",
+        height=120
+    )
+    st.session_state.program_objectives = peo
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        po = st.text_area(
+            "Program Outcomes (PO)",
+            value=st.session_state.program_outcomes,
+            placeholder="Example:\nPO1: Critical thinking and problem-solving\nPO2: Effective communication\nPO3: Ethical decision-making\nPO4: Teamwork and collaboration",
+            help="Skills and knowledge from the program",
+            key="po_input",
+            height=150
+        )
+        st.session_state.program_outcomes = po
+    
+    with col2:
+        pso = st.text_area(
+            "Program Specific Outcomes (PSO)",
+            value=st.session_state.specialized_outcomes,
+            placeholder="Example:\nPSO1: Advanced managerial skills\nPSO2: Strategic HR management\nPSO3: Organizational leadership\nPSO4: Change management expertise",
+            help="Specialized skills for this specific program",
+            key="pso_input",
+            height=150
+        )
+        st.session_state.specialized_outcomes = pso
+    
+    co = st.text_area(
+        "Course Learning Outcomes (CO)",
+        value=st.session_state.course_outcomes,
+        placeholder="Example:\nCO1: Understand key organizational behaviour concepts [Bloom: Understand]\nCO2: Apply OB theories to real-world scenarios [Bloom: Apply]\nCO3: Analyze organizational dynamics and culture [Bloom: Analyze]\nCO4: Evaluate organizational strategies [Bloom: Evaluate]",
+        help="What students will learn in THIS specific course",
+        key="co_input",
+        height=150
+    )
+    st.session_state.course_outcomes = co
+    
+    if peo or po or co or pso:
+        st.success("✅ Academic mappings will be integrated into content generation")
+    else:
+        st.info("ℹ️ Content will be generated with general academic outcomes")
+    
+    st.divider()
+    
+    # ========== Google Drive Configuration ==========
+    st.subheader("☁️ Google Drive Upload (Optional)")
+    
+    if GDRIVE_AVAILABLE:
+        st.info("💡 Files can be automatically uploaded to your Google Drive with timestamped subfolders")
+        
+        folder_url = st.text_input(
+            "Google Drive Folder URL or ID",
+            value=st.session_state.gdrive_folder_url,
+            key="folder_input",
+            placeholder="https://drive.google.com/drive/folders/...",
+            help="Paste the Google Drive folder URL where files should be uploaded"
+        )
+        st.session_state.gdrive_folder_url = folder_url
+        
+        if folder_url:
+            folder_id = extract_folder_id_from_url(folder_url)
+            if folder_id:
+                st.session_state.gdrive_folder_id = folder_id
+                st.success(f"✅ Folder ID extracted: {folder_id}")
+                
+                st.warning("⚠️ **Important:** Share this folder with the service account!")
+                st.code("curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
+                
+                with st.expander("📋 How to share the folder", expanded=False):
+                    st.markdown("""
+                    1. Open your Google Drive folder
+                    2. Click the **Share** button
+                    3. Add this email: `curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com`
+                    4. Give **Editor** permissions
+                    5. Click **Send**
+                    6. Come back here and continue
+                    """)
+            else:
+                st.error("❌ Could not extract folder ID. Please check the URL.")
+    else:
+        st.warning("⚠️ Google Drive libraries not installed. Upload feature disabled.")
+        st.info("Install with: pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
+    
+    st.divider()
+    
+    # ========== Navigation Buttons ==========
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col1:
+        if st.button("← Back", use_container_width=True, key="back_to_upload"):
+            st.session_state.step = 'syllabus_upload'
+            st.rerun()
+    
+    with col3:
+        if st.button("Next: Generate Outline →", type="primary", use_container_width=True, key="next_to_outline"):
+            # Validation
+            if not st.session_state.course_title:
+                st.error("❌ Please enter a course title")
+            elif not st.session_state.course_code:
+                st.error("❌ Please enter a course code")
+            else:
+                st.session_state.step = 'outline_generation'
+                st.rerun()
+
+# ============================================================================
+# PAGE 3: OUTLINE GENERATION
+# ============================================================================
+
+def show_outline_page():
+    """Outline generation and editing page"""
+    st.header("📋 Step 3: Course Outline")
+    
+    # Check if outline needs to be generated
+    if 'outline' not in st.session_state or st.session_state.outline is None:
+        
+        # Check if extracted from syllabus
+        extracted = st.session_state.get('extracted_structure')
+        
+        if extracted and extracted.get('units'):
+            st.info("✅ Using syllabus structure from uploaded PDF")
+            
+            # Convert extracted structure to outline format
+            outline = []
+            for unit in extracted['units']:
+                sections = []
+                for i, topic in enumerate(unit['topics'], 1):
+                    sections.append({
+                        "section_number": f"{unit['unit_number']}.{i}",
+                        "section_title": topic,
+                        "description": topic
+                    })
+                
+                outline.append({
+                    "unit_number": unit['unit_number'],
+                    "unit_title": unit['unit_title'],
+                    "sections": sections
+                })
+            
+            st.session_state.outline = outline
+            st.success(f"✅ Created outline with {len(outline)} units")
+            st.rerun()
+            
+        else:
+            # MUST generate with AI - NO DEFAULTS
+            st.warning("⚠️ No outline generated yet")
+            st.info("💡 Click 'Generate with AI' to create a custom course outline based on your configuration")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🤖 Generate Outline with AI", type="primary", use_container_width=True, key="generate_ai_outline"):
+                    with st.spinner("🤖 AI is creating your course outline... This may take 30-60 seconds"):
+                        generated_outline = generate_outline_with_ai()
+                        
+                        if generated_outline:
+                            st.session_state.outline = generated_outline
+                            st.success("✅ Outline generated successfully!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ AI generation failed. Please try again or check your API key.")
+                            return
+            
+            with col2:
+                if st.button("← Back to Configuration", use_container_width=True, key="back_no_outline"):
+                    st.session_state.step = 'configuration'
+                    st.rerun()
+            
+            return
+    
+    # Display and edit outline
+    outline = st.session_state.outline
+    total_sections = sum(len(u.get('sections', [])) for u in outline)
+    
+    # Summary metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📚 Units", len(outline))
+    with col2:
+        st.metric("📝 Sections", total_sections)
+    with col3:
+        st.metric("📄 Est. Pages", f"~{total_sections * 5}")
+    
+    st.divider()
+    
+    # Convert outline to editable table format
+    st.subheader("✏️ Review and Edit Outline")
+    st.caption("Click any cell to edit directly. You can modify titles and descriptions.")
+    
+    rows = []
+    for unit in outline:
+        for section in unit.get('sections', []):
+            rows.append({
+                'Unit': unit['unit_number'],
+                'Unit Title': unit['unit_title'],
+                'Section': section['section_number'],
+                'Section Title': section['section_title'],
+                'Description': section['description']
+            })
+    
+    edited = st.data_editor(
+        rows,
+        num_rows="dynamic",
+        use_container_width=True,
+        height=400,
+        key="outline_editor",
+        column_config={
+            "Unit": st.column_config.NumberColumn("Unit #", width="small"),
+            "Unit Title": st.column_config.TextColumn("Unit Title", width="medium"),
+            "Section": st.column_config.TextColumn("Section #", width="small"),
+            "Section Title": st.column_config.TextColumn("Section Title", width="medium"),
+            "Description": st.column_config.TextColumn("Description", width="large"),
+        }
+    )
+    
+    st.divider()
+    
+    # Navigation buttons
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("← Back", use_container_width=True, key="back_from_outline"):
+            st.session_state.step = 'configuration'
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Regenerate with AI", use_container_width=True, key="regen_outline_btn"):
+            st.session_state.outline = None
+            st.rerun()
+    
+    with col3:
+        if st.button("✅ Approve & Generate Content →", type="primary", use_container_width=True, key="approve_outline_btn"):
+            # Convert edited data back to outline format
+            approved = []
+            current = None
+            
+            for row in edited:
+                unit_num = row['Unit']
+                unit_title = row['Unit Title']
+                section_num = row['Section']
+                section_title = row['Section Title']
+                description = row['Description']
+                
+                if current is None or current['unit_number'] != unit_num:
+                    if current:
+                        approved.append(current)
+                    current = {
+                        'unit_number': unit_num,
+                        'unit_title': unit_title,
+                        'sections': []
+                    }
+                
+                current['sections'].append({
+                    'section_number': section_num,
+                    'section_title': section_title,
+                    'description': description
+                })
+            
+            if current:
+                approved.append(current)
+            
+            st.session_state.approved_outline = approved
+            st.session_state.images = {}  # Reset images
+            st.session_state.image_prompts = {}  # Reset image prompts
+            st.session_state.step = 'content_generation'
+            st.success("✅ Outline approved! Moving to content generation...")
+            time.sleep(1)
+            st.rerun()
+
+# ============================================================================
+# Phase 4 Part 1 Complete
+# ============================================================================
+print("Phase 4 Part 1: UI Pages (Syllabus, Config, Outline) loaded successfully")"""
+PHASE 4: USER INTERFACE PAGES (PART 2)
+========================================
+- Content generation page with image uploads
+- Compilation page with Google Drive upload
+- Sidebar status display
+"""
+
+# ============================================================================
+# PAGE 4: CONTENT GENERATION WITH IMAGE UPLOADS
+# ============================================================================
+
+def show_content_generation_page():
+    """Content generation page with image upload and prompt generation"""
+    st.header("✍️ Step 4: Content Generation")
+    
+    if 'approved_outline' not in st.session_state:
+        st.error("❌ No approved outline found")
+        if st.button("← Back to Outline", key="back_no_outline_gen"):
+            st.session_state.step = 'outline_generation'
+            st.rerun()
+        return
+    
+    # Initialize generation
+    if 'content' not in st.session_state or not st.session_state.content:
+        st.session_state.content = {}
+        st.session_state.sections_to_process = []
+        st.session_state.generation_start_time = time.time()
+        
+        # Build list of sections to process
+        for unit in st.session_state.approved_outline:
+            for section in unit.get('sections', []):
+                st.session_state.sections_to_process.append({
+                    'unit_number': unit['unit_number'],
+                    'unit_title': unit['unit_title'],
+                    'section_number': section['section_number'],
+                    'section_title': section['section_title'],
+                    'description': section.get('description', '')
+                })
+    
+    total = len(st.session_state.sections_to_process)
+    completed = len(st.session_state.content)
+    
+    # Progress metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("✅ Completed", f"{completed}/{total}")
+    with col2:
+        progress_pct = (completed / total * 100) if total > 0 else 0
+        st.metric("📊 Progress", f"{progress_pct:.0f}%")
+    with col3:
+        st.metric("⏳ Remaining", total - completed)
+    with col4:
+        if completed > 0:
+            elapsed = time.time() - st.session_state.generation_start_time
+            avg_time = elapsed / completed
+            eta_seconds = int(avg_time * (total - completed))
+            eta_minutes = eta_seconds // 60
+            st.metric("⏱️ ETA", f"~{eta_minutes}min")
+    
+    # Progress bar
+    st.progress(completed / total if total > 0 else 0)
+    
+    st.divider()
+    
+    # Generate content section by section
+    if completed < total:
+        current = st.session_state.sections_to_process[completed]
+        section_key = f"{current['section_number']} {current['section_title']}"
+        
+        st.subheader(f"🤖 Generating: {section_key}")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info(f"**Unit {current['unit_number']}:** {current['unit_title']}")
+            st.write(f"**Description:** {current['description']}")
+        
+        with col2:
+            if st.button("⏸️ Pause Generation", key="pause_gen", use_container_width=True):
+                st.session_state.paused = True
+                st.rerun()
+        
+        # Generate content if not paused
+        if not st.session_state.paused:
+            with st.spinner(f"✍️ Writing content for section {completed + 1} of {total}... This may take 30-60 seconds"):
+                
+                # Build context
+                context = {
+                    'course_title': st.session_state.course_title,
+                    'course_code': st.session_state.course_code,
+                    'credits': st.session_state.credits,
+                    'target_audience': st.session_state.target_audience,
+                    'program_objectives': st.session_state.program_objectives,
+                    'program_outcomes': st.session_state.program_outcomes,
+                    'course_outcomes': st.session_state.course_outcomes,
+                    'specialized_outcomes': st.session_state.specialized_outcomes
+                }
+                
+                # Generate content
+                with st.expander("🔍 Content Generation Details", expanded=True):
+                    content = generate_content(current, context)
+                
+                if content and len(content.strip()) > 100:
+                    st.session_state.content[section_key] = content
+                    st.success(f"✅ Content generated for {section_key}")
+                    
+                    # Show preview
+                    with st.expander("📄 Content Preview", expanded=False):
+                        st.write(content[:500] + "...")
+                    
+                    st.divider()
+                    
+                    # ===== IMAGE SECTION =====
+                    st.subheader("🖼️ Add Image for This Section (Optional)")
+                    
+                    tab1, tab2 = st.tabs(["📤 Upload Image", "🤖 Generate Image Prompt"])
+                    
+                    with tab1:
+                        st.info("💡 Upload a relevant image for this section")
+                        uploaded_image = st.file_uploader(
+                            f"Upload image for {section_key}",
+                            type=['png', 'jpg', 'jpeg'],
+                            key=f"image_upload_{completed}"
+                        )
+                        
+                        if uploaded_image:
+                            st.session_state.images[section_key] = uploaded_image
+                            st.success("✅ Image uploaded successfully!")
+                            st.image(uploaded_image, caption=section_key, width=300)
+                    
+                    with tab2:
+                        st.info("💡 Generate an AI prompt to create an image for this section")
+                        
+                        if st.button("🤖 Generate Image Prompt", key=f"gen_img_prompt_{completed}"):
+                            with st.spinner("Generating image prompt..."):
+                                img_prompt = generate_image_prompt_for_section(current, context)
+                                st.session_state.image_prompts[section_key] = img_prompt
+                        
+                        if section_key in st.session_state.image_prompts:
+                            st.success("✅ Image prompt generated!")
+                            prompt_text = st.text_area(
+                                "Image Generation Prompt (edit if needed):",
+                                value=st.session_state.image_prompts[section_key],
+                                height=150,
+                                key=f"img_prompt_text_{completed}"
+                            )
+                            st.session_state.image_prompts[section_key] = prompt_text
+                            
+                            st.info("💡 Copy this prompt and use it with DALL-E, Midjourney, or Stable Diffusion to generate an image, then upload it in the 'Upload Image' tab")
+                            
+                            if st.button("📋 Copy Prompt", key=f"copy_prompt_{completed}"):
+                                st.code(prompt_text)
+                    
+                    st.divider()
+                    
+                    # Continue or skip buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("⏭️ Skip Image & Continue", type="primary", use_container_width=True, key=f"skip_img_{completed}"):
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("✅ Save & Continue", type="primary", use_container_width=True, key=f"continue_{completed}"):
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                else:
+                    st.error("❌ Content generation failed or returned insufficient content")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🔄 Retry", type="primary", use_container_width=True, key="retry_gen"):
+                            st.rerun()
+                    with col2:
+                        if st.button("⏭️ Skip This Section", use_container_width=True, key="skip_section"):
+                            st.session_state.content[section_key] = "[Content generation skipped]"
+                            st.rerun()
+        else:
+            # Paused state
+            st.warning("⏸️ Content generation paused")
+            st.info(f"Currently at section {completed + 1} of {total}")
+            
+            if st.button("▶️ Resume Generation", type="primary", key="resume_gen"):
+                st.session_state.paused = False
+                st.rerun()
+    
+    else:
+        # All content generated
+        st.success("🎉 All Content Generated Successfully!")
+        
+        total_words = sum(len(c.split()) for c in st.session_state.content.values())
+        est_pages = total_words // 300 + 1 if total_words > 0 else 0
+        images_added = len(st.session_state.images)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📝 Total Words", f"{total_words:,}")
+        with col2:
+            st.metric("📄 Est. Pages", f"~{est_pages}")
+        with col3:
+            st.metric("📚 Sections", total)
+        with col4:
+            st.metric("🖼️ Images", images_added)
+        
+        # Show content summary
+        with st.expander("📊 Content Summary", expanded=False):
+            for unit in st.session_state.approved_outline:
+                st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
+                for section in unit.get('sections', []):
+                    sec_key = f"{section['section_number']} {section['section_title']}"
+                    content_words = len(st.session_state.content.get(sec_key, '').split())
+                    has_image = "🖼️" if sec_key in st.session_state.images else ""
+                    st.write(f"  - {sec_key}: {content_words:,} words {has_image}")
+        
+        st.divider()
+        
+        # Navigation buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("← Back to Outline", use_container_width=True, key="back_from_gen"):
+                st.session_state.step = 'outline_generation'
+                st.rerun()
+        
+        with col2:
+            if st.button("🔄 Regenerate All", use_container_width=True, key="regen_all"):
+                if st.checkbox("⚠️ Confirm: This will delete all generated content", key="confirm_regen"):
+                    st.session_state.content = {}
+                    st.session_state.images = {}
+                    st.session_state.image_prompts = {}
+                    st.rerun()
+        
+        with col3:
+            if st.button("📄 Compile Documents →", type="primary", use_container_width=True, key="go_compile"):
+                st.session_state.step = 'compilation'
+                st.rerun()
+
+# ============================================================================
+# PAGE 5: COMPILATION AND GOOGLE DRIVE UPLOAD
+# ============================================================================
+
+def show_compilation_page():
+    """Compilation page with PDF/DOCX generation and Google Drive upload"""
+    st.header("📄 Step 5: Compile & Download")
+    
+    # Validation
+    if 'content' not in st.session_state or not st.session_state.content:
+        st.error("❌ No content to compile")
+        if st.button("← Back to Content Generation", key="back_no_content"):
+            st.session_state.step = 'content_generation'
+            st.rerun()
+        return
+    
+    if 'approved_outline' not in st.session_state:
+        st.error("❌ No outline found")
+        if st.button("← Back to Outline", key="back_no_outline_comp"):
+            st.session_state.step = 'outline_generation'
+            st.rerun()
+        return
+    
+    # ========== Summary ==========
+    st.subheader("📊 Content Summary")
+    
+    total_sections = len(st.session_state.content)
+    total_words = sum(len(c.split()) for c in st.session_state.content.values())
+    est_pages = total_words // 300 + 1 if total_words > 0 else 0
+    images_count = len(st.session_state.images)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("📚 Units", len(st.session_state.approved_outline))
+    with col2:
+        st.metric("📝 Sections", total_sections)
+    with col3:
+        st.metric("📄 Words", f"{total_words:,}")
+    with col4:
+        st.metric("🖼️ Images", images_count)
+    
+    st.info(f"📄 Estimated pages: ~{est_pages}")
+    
+    st.divider()
+    
+    # ========== Compilation Options ==========
+    st.subheader("⚙️ Compilation Options")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        compile_type = st.radio(
+            "What to compile:",
+            ["Separate Unit Files", "Complete Course File", "Both (Separate + Complete)"],
+            index=2,
+            key="compile_type",
+            help="Choose whether to compile each unit separately, one complete file, or both"
+        )
+    
+    with col2:
+        output_format = st.radio(
+            "Output Format:",
+            ["PDF", "DOCX (Editable)"],
+            index=0,
+            key="output_format",
+            help="PDF for final documents, DOCX for editable files in Google Docs"
+        )
+    
+    # Google Drive upload option
+    upload_drive = False
+    if GDRIVE_AVAILABLE and st.session_state.gdrive_folder_id:
+        st.divider()
+        upload_drive = st.checkbox(
+            "☁️ Upload to Google Drive (Auto-creates timestamped subfolder)",
+            value=True,
+            key="upload_drive",
+            help="Automatically upload all files to Google Drive in a timestamped subfolder"
+        )
+        
+        if upload_drive:
+            st.success(f"✅ Will upload to: {st.session_state.gdrive_folder_url}")
+            st.info("💡 A subfolder with timestamp will be created automatically")
+            if output_format == "DOCX":
+                st.info("💡 DOCX files will be editable directly in Google Docs")
+    
+    st.divider()
+    
+    # ========== Compilation Button ==========
+    if st.button("🔨 Start Compilation & Upload", type="primary", use_container_width=True, key="start_compile"):
+        
+        course_info = {
+            'course_title': st.session_state.course_title,
+            'course_code': st.session_state.course_code,
+            'credits': st.session_state.credits,
+            'target_audience': st.session_state.target_audience
+        }
+        
+        # ===== Setup Google Drive =====
+        gdrive_service = None
+        gdrive_folder_id = None
+        drive_links = {}
+        
+        if upload_drive:
+            gdrive_service, gdrive_folder_id = setup_gdrive_for_compilation()
+            
+            if not gdrive_service or not gdrive_folder_id:
+                st.error("❌ Google Drive setup failed - continuing without upload")
+                upload_drive = False
+        
+        # ===== Compilation =====
+        compiled_files = {}
+        mime_type = 'application/pdf' if output_format == "PDF" else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        ext = '.pdf' if output_format == "PDF" else '.docx'
+        
+        # Compile individual units
+        if compile_type in ["Separate Unit Files", "Both (Separate + Complete)"]:
+            st.subheader("🔨 Compiling Individual Units")
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            for i, unit in enumerate(st.session_state.approved_outline):
+                status_text.text(f"Compiling Unit {unit['unit_number']}: {unit['unit_title'][:40]}...")
+                
+                with st.spinner(f"Compiling Unit {unit['unit_number']}..."):
+                    if output_format == "PDF":
+                        file_buffer = compile_unit_pdf(unit, course_info, st.session_state.content)
+                    else:
+                        file_buffer = compile_unit_docx(unit, course_info, st.session_state.content)
+                    
+                    if file_buffer:
+                        # Safe filename
+                        safe_title = re.sub(r'[^\w\s-]', '', unit['unit_title'])[:30]
+                        filename = f"Unit_{unit['unit_number']}_{safe_title}{ext}"
+                        
+                        compiled_files[f"Unit_{unit['unit_number']}"] = {
+                            'buffer': file_buffer,
+                            'filename': filename
+                        }
+                        
+                        st.success(f"✅ {output_format} compiled for Unit {unit['unit_number']}")
+                        
+                        # Upload to Google Drive
+                        if upload_drive and gdrive_service and gdrive_folder_id:
+                            file_buffer.seek(0)
+                            with st.spinner(f"Uploading Unit {unit['unit_number']} to Drive..."):
+                                link = upload_to_gdrive(gdrive_service, file_buffer, filename, gdrive_folder_id, mime_type)
+                                if link:
+                                    drive_links[f"Unit_{unit['unit_number']}"] = link
+                                    st.success(f"📤 Uploaded to Google Drive")
+                                else:
+                                    st.warning("⚠️ Upload failed for this file")
+                    else:
+                        st.error(f"❌ Failed to compile Unit {unit['unit_number']}")
+                
+                progress_bar.progress((i + 1) / len(st.session_state.approved_outline))
+            
+            status_text.text("✅ All units compiled!")
+        
+        # Compile complete file
+        if compile_type in ["Complete Course File", "Both (Separate + Complete)"]:
+            st.subheader("🔨 Compiling Complete Course File")
+            
+            with st.spinner("Compiling complete course file... This may take a minute..."):
+                if output_format == "PDF":
+                    file_buffer = compile_complete_pdf(
+                        st.session_state.approved_outline,
+                        course_info,
+                        st.session_state.content
+                    )
+                else:
+                    file_buffer = compile_complete_docx(
+                        st.session_state.approved_outline,
+                        course_info,
+                        st.session_state.content
+                    )
+                
+                if file_buffer:
+                    filename = f"{st.session_state.course_code}_Complete_Curriculum{ext}"
+                    compiled_files['Complete'] = {
+                        'buffer': file_buffer,
+                        'filename': filename
+                    }
+                    st.success(f"✅ Complete {output_format} file compiled")
+                    
+                    # Upload to Google Drive
+                    if upload_drive and gdrive_service and gdrive_folder_id:
+                        file_buffer.seek(0)
+                        with st.spinner("Uploading complete file to Drive..."):
+                            link = upload_to_gdrive(gdrive_service, file_buffer, filename, gdrive_folder_id, mime_type)
+                            if link:
+                                drive_links['Complete'] = link
+                                st.success("📤 Complete file uploaded to Google Drive")
+                            else:
+                                st.warning("⚠️ Upload failed for complete file")
+                else:
+                    st.error("❌ Failed to compile complete file")
+        
+        st.success("🎉 Compilation Complete!")
+        
+        st.divider()
+        
+        # ===== Download Links =====
+        st.subheader("📥 Download Files & Google Drive Links")
+        
+        if not compiled_files:
+            st.error("❌ No files were compiled successfully")
+        else:
+            for key, data in compiled_files.items():
+                st.write("---")
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    st.write(f"**📄 {data['filename']}**")
+                    file_size = len(data['buffer'].getvalue()) / 1024  # KB
+                    st.caption(f"Size: {file_size:.1f} KB")
+                
+                with col2:
+                    if key in drive_links:
+                        st.markdown(f"[🔗 Open in Google Drive]({drive_links[key]})")
+                    else:
+                        st.write("No Drive link")
+                
+                with col3:
+                    data['buffer'].seek(0)
+                    st.download_button(
+                        "⬇️ Download",
+                        data=data['buffer'].getvalue(),
+                        file_name=data['filename'],
+                        mime=mime_type,
+                        key=f"dl_{key}",
+                        use_container_width=True
+                    )
+        
+        st.divider()
+        
+        # ===== Navigation Buttons =====
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("🔄 Recompile", use_container_width=True, key="recompile"):
+                st.rerun()
+        
+        with col2:
+            if st.button("← Back to Content", use_container_width=True, key="back_final"):
+                st.session_state.step = 'content_generation'
+                st.rerun()
+        
+        with col3:
+            if st.button("🏠 New Project", use_container_width=True, key="new_proj"):
+                # Save important data
+                api_key = st.session_state.api_key
+                folder_url = st.session_state.gdrive_folder_url
+                
+                # Clear everything
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                
+                # Reinitialize
+                initialize_session_state()
+                st.session_state.api_key = api_key
+                st.session_state.gdrive_folder_url = folder_url
+                
+                st.success("✅ Ready for new project!")
+                time.sleep(1)
+                st.rerun()
+
+# ============================================================================
+# SIDEBAR STATUS DISPLAY
+# ============================================================================
+
+def show_sidebar_status():
+    """Display current status in sidebar"""
+    with st.sidebar:
+        st.header("📊 Project Status")
+        
+        # Course info
         if st.session_state.course_title:
             st.write(f"**Course:** {st.session_state.course_title[:40]}")
+            st.write(f"**Code:** {st.session_state.course_code}")
+            st.write(f"**Credits:** {st.session_state.credits}")
         
+        st.divider()
+        
+        # Outline status
         if st.session_state.get('approved_outline'):
             units = len(st.session_state.approved_outline)
             sections = sum(len(u.get('sections', [])) for u in st.session_state.approved_outline)
-            st.metric("Units", units)
-            st.metric("Sections", sections)
+            st.metric("📚 Units", units)
+            st.metric("📝 Sections", sections)
         
+        # Content status
         if st.session_state.content:
             total_words = sum(len(c.split()) for c in st.session_state.content.values())
-            st.metric("Generated Words", f"{total_words:,}")
-            st.metric("Images Added", len(st.session_state.images))
+            st.metric("✍️ Words Generated", f"{total_words:,}")
+            st.metric("🖼️ Images Added", len(st.session_state.images))
         
         st.divider()
-        st.caption("✅ All features integrated & enhanced")
+        
+        # Current step
+        step_names = {
+            'syllabus_upload': '1️⃣ Syllabus Upload',
+            'configuration': '2️⃣ Configuration',
+            'outline_generation': '3️⃣ Outline',
+            'content_generation': '4️⃣ Content Generation',
+            'compilation': '5️⃣ Compilation'
+        }
+        current_step = step_names.get(st.session_state.step, 'Unknown')
+        st.info(f"**Current Step:**\n{current_step}")
+        
+        st.divider()
+        
+        # System status
+        st.caption("**System Status:**")
         st.caption(f"PDF: {'✅' if REPORTLAB_AVAILABLE else '❌'}")
         st.caption(f"DOCX: {'✅' if DOCX_AVAILABLE else '❌'}")
         st.caption(f"Drive: {'✅' if GDRIVE_AVAILABLE else '❌'}")
+        st.caption(f"PyPDF2: {'✅' if PYPDF2_AVAILABLE else '❌'}")
 
-if __name__ == "__main__":
-    main()
+# ============================================================================
+# Phase 4 Part 2 Complete
+# ============================================================================
+print("Phase 4 Part 2: Content Generation, Compilation, and Sidebar loaded successfully")"""
+AI CURRICULUM GENERATOR - COMPLETE ALL-IN-ONE FILE
+===================================================
+Version: 2.0 - Complete with All Fixes
+Last Updated: 2025-01-14
+
+✅ ALL FIXES INCLUDED:
+- Fixed LaTeX equation rendering (converts to Unicode symbols)
+- Automatic timestamped Google Drive subfolders
+- Image upload for each section
+- AI image prompt generation
+- Enhanced error handling
+- Complete PDF/DOCX compilation
+- Academic outcome mapping (PEO/PO/CO/PSO)
+
+INSTRUCTIONS:
+1. Save this entire file as 'curriculum_generator.py'
+2. Install requirements: pip install streamlit requests pillow PyPDF2 reportlab python-docx google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
+3. Run: streamlit run curriculum_generator.py
+4. Share Google Drive folder with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com
+"""
+
+# ============================================================================
+# IMPORTS AND CONFIGURATION (PHASE 1)
+# ============================================================================
+
+import streamlit as st
+import requests
+import json
+import time
+import os
+import re
+from datetime import datetime
+from io import BytesIO
+from PIL import Image as PilImage
+
+# PDF imports
+try:
+    import PyPDF2
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
+
+# Google Drive imports
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+    GDRIVE_AVAILABLE = True
+except ImportError:
+    GDRIVE_AVAILABLE = False
+
+# ReportLab imports
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+        Table, TableStyle, Image, KeepTogether
+    )
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
+    from reportlab.lib import colors
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+# DOCX imports
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.style import WD_STYLE_TYPE
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+# Configuration
+DEFAULT_API_KEY = "xai-6QJwG3u6540lVZyXbFBArvLQ43ZyJsrnq65pyCWhxh5zXqNvtwe6LdTURbTwvE2sA3Uxlb9gn82Vamgu"
+API_URL = "https://api.x.ai/v1/chat/completions"
+
+# Google Drive Credentials
+GDRIVE_CREDENTIALS = {
+    "type": "service_account",
+    "project_id": "dynamic-wording-475018-e2",
+    "private_key_id": "2e97986797c2f143cc94209e0b0f97922146c958",
+    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCJ/1wVoHvZvFvM\nxXxq1Zzd3XsC5g24nw9/TUdIvAvGsZU+6ZF9fxYScHpQzy2LpEwKYtaHmxsm/Ia8\n4eX33tcysd7K9vEWCPW1RckbNlzuLbCUHm5WU7pxhCB8AEBy2roD82RRkZvGhzgs\nBQFK4AbDEbuglT1BPej5+pSwJti4JaGjkozgum8ecvaZv3FLof5zp2/s0LDICOGB\nUVZCXvXDKetMLoZYJRm/W41T074NUXdmCCFtuyiXszNzzQa/HVy7yqo/5UxXQyRs\nZgAKSmp7EhtXkEozlBoMGhFXQHH6oIs9j4FtFKZ3w7/oLgCg2MqgX+G/1W7znaK6\n4i+vjrWTAgMBAAECggEAIzWh96yqXQxHufAbhiC5tQwpMjyjfJss95SunvrH4Gr4\nAwTSR9xws8S6GLs7yjjh4/aC+TeUjnZ5JGFY7U0QyFEE4PFv4ujnVFiZbtWIkYbb\n2ncHPQSA+iy1ox3nU8bGFnL4Ai3uOpHOvcCLK2EMqKHyJw9dATP8KSgL3wQSYK1t\nbbJQbuBec1W92//i1x2S2Ac0ppWyP379K3BiVcqPUUN83cqvklCeAdUNOfNro4o6\nSVgrAx4NF+EhnO158CNvJ70cKhY1Cyz3+ihPg2Z6UDL8RpcddrCScKYJqHp1Vsz+\nWHngLqR0InLCefcY16Pd90yFDWFlwm7xCUPjdOYAPQKBgQC9F66IHAvrLdGSz9OO\nxUuZQNPDU18/KUjO74/KNF4vSzd2Ye65rY5ai/BNeGNCUxRVyiUwlsdaEplPhEce\n7+3U0sP0NoxrOCYh0r0sBd7QpZWx5YBFsz/s3MVe10BvFaZWUOqUQHHOQRquyeEu\nCHsx2s5D86Zl6wNG9XSESV9A/wKBgQC602fqsWza40zqeqzN0YY/Bb0+LJoGSfwh\nMuWRAyhjJHGV/LomA2uLuwvLAaJ5vOOv+tCGhnQPV4s8P5NlNXDOggq7OTUBxWgG\nZxpJBop0RtV71M2/v6v/iyKpI05cc6prGRWv56oFQ3vdyB79EXBJx3epRBrW+URt\nDXgRq7b3bQKBgGAImvc9Z0A1sO4i5orn4JEgv2u/9+uYCAYw3JIRLpROWwigjCF4\n54dM8uolbiPNFdLMKz8WFIDGWV5tC8HGkL85m5N38LCzf4pGARVOle7ZacFDkXXU\np26gYQzdvTetgyDrT3ejkyjxH6ANn3NFk2uqeH9CSwwP40Yyes6EhP/5AoGAZ2Cj\nl9IlkdlErlrDVAAkcKsUVFsJv4Eg6p3nOZ6tsm5wC7aUqoQp9l/B3stAxGwo8S+w\nQ0AS6IpgmS30uYQgr6R1m7PECP7a2PAkM1RTOJQZfTP7xaah3f13aHAI5E98dVak\nEXn3MoJtAAPEYfRMVgbxx8/PqjS0EEPrtJt32uECgYEAi/8JnI8MAhq+eDcVuO45\nu/itREj4sHS/4dcTtL2mbUz8DKWyDpe6LC7/oMIl4459Ktp7MOanR/yPIvJfU8t6\ni+05OoFDvrDkXraE28wIHO0qIT1NY/htaNByBHNvs9b1Rj99O7o2sH8k8fG2OM0u\nxTEWjBaUn1bG59flELY88zk=\n-----END PRIVATE KEY-----\n",
+    "client_email": "curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com",
+    "client_id": "113202445348377169696",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/curriculum-generator%40dynamic-wording-475018-e2.iam.gserviceaccount.com",
+    "universe_domain": "googleapis.com"
+}
+
+def initialize_session_state():
+    """Initialize all session state variables"""
+    defaults = {
+        'step': 'syllabus_upload',
+        'api_key': DEFAULT_API_KEY,
+        'course_title': 'Organizational Behaviour',
+        'course_code': 'MBA101',
+        'credits': 3,
+        'target_audience': 'Postgraduate (MBA)',
+        'num_units': 4,
+        'sections_per_unit': 8,
+        'program_objectives': '',
+        'program_outcomes': '',
+        'course_outcomes': '',
+        'specialized_outcomes': '',
+        'use_egyankosh_style': True,
+        'document_heading': '',
+        'logo': None,
+        'gdrive_folder_url': '',
+        'gdrive_folder_id': '',
+        'content': {},
+        'images': {},
+        'image_prompts': {},
+        'paused': False,
+        'extracted_structure': None,
+        'outline': None,
+        'approved_outline': None,
+        'sections_to_process': [],
+        'generation_start_time': None,
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+# ============================================================================
+# HELPER FUNCTIONS (PHASE 2)
+# ============================================================================
+
+def get_api_headers():
+    """Get API headers"""
+    return {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {st.session_state.api_key}"
+    }
+
+def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
+    """Make API call with detailed logging"""
+    headers = get_api_headers()
+    payload = {
+        "messages": messages,
+        "model": "grok-2-1212",
+        "stream": False,
+        "temperature": 0.3,
+        "max_tokens": max_tokens
+    }
+    
+    for attempt in range(retries):
+        try:
+            st.write(f"🔄 API Call Attempt {attempt + 1}/{retries}")
+            response = requests.post(API_URL, headers=headers, json=payload, timeout=timeout)
+            st.write(f"📡 Status: {response.status_code}")
+            response.raise_for_status()
+            result = response.json()
+            
+            if 'choices' in result and len(result['choices']) > 0:
+                content = result['choices'][0]['message']['content']
+                word_count = len(content.split())
+                st.write(f"✅ Response: {word_count:,} words")
+                return content
+                
+        except requests.exceptions.HTTPError as e:
+            st.error(f"❌ HTTP Error {e.response.status_code}")
+            if e.response.status_code == 401:
+                return None
+            elif e.response.status_code == 429:
+                time.sleep(10)
+        except requests.exceptions.Timeout:
+            st.error(f"⏱️ Timeout after {timeout}s")
+            if attempt < retries - 1:
+                timeout += 30
+        except Exception as e:
+            st.error(f"❌ Error: {str(e)}")
+    
+    return None
+
+def extract_pdf_text(pdf_file):
+    """Extract text from PDF"""
+    if not PYPDF2_AVAILABLE:
+        return None
+    try:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
+        return None
+
+def parse_syllabus_structure(text):
+    """Parse syllabus structure"""
+    structure = {'course_info': {}, 'units': []}
+    
+    patterns = {
+        'title': r'(?:Course|Subject)\s*(?:Title|Name)?\s*:?\s*(.+)',
+        'code': r'(?:Course|Subject)\s*Code\s*:?\s*([A-Z0-9]+)',
+        'credits': r'Credits?\s*:?\s*(\d+)',
+    }
+    
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            structure['course_info'][key] = match.group(1).strip()
+    
+    unit_pattern = r'UNIT[\s-]*(\d+)\s*:?\s*(.+?)(?=UNIT[\s-]*\d+|$)'
+    units = re.finditer(unit_pattern, text, re.IGNORECASE | re.DOTALL)
+    
+    for unit_match in units:
+        unit_num = unit_match.group(1)
+        unit_content = unit_match.group(2)
+        title_match = re.search(r'^(.+?)(?:\n|$)', unit_content)
+        unit_title = title_match.group(1).strip() if title_match else f"Unit {unit_num}"
+        
+        topics = []
+        for line in unit_content.split('\n'):
+            if re.match(r'^\s*[\d.]+\s+(.+?), line):
+                topic = re.match(r'^\s*[\d.]+\s+(.+?), line).group(1).strip()
+                if 5 < len(topic) < 200:
+                    topics.append(topic)
+        
+        structure['units'].append({
+            'unit_number': int(unit_num),
+            'unit_title': unit_title,
+            'topics': topics
+        })
+    
+    return structure
+
+def clean_text_for_pdf(text):
+    """Clean text for PDF with LaTeX handling (FIXED)"""
+    if not text:
+        return ""
+    
+    # Convert LaTeX equations to readable format
+    text = re.sub(r'\\\((.*?)\\\)', r'[\1]', text)
+    text = re.sub(r'\$([^\$]+?)\, r'[\1]', text)
+    text = re.sub(r'\\\[(.*?)\\\]', r'[\1]', text, flags=re.DOTALL)
+    text = re.sub(r'\$\$(.*?)\$\, r'[\1]', text, flags=re.DOTALL)
+    
+    # LaTeX to Unicode symbols
+    latex_replacements = {
+        r'\\leq': '≤', r'\\geq': '≥', r'\\neq': '≠', r'\\approx': '≈',
+        r'\\times': '×', r'\\div': '÷', r'\\pm': '±', r'\\sum': 'Σ',
+        r'\\prod': 'Π', r'\\int': '∫', r'\\infty': '∞', r'\\partial': '∂',
+        r'\\alpha': 'α', r'\\beta': 'β', r'\\gamma': 'γ', r'\\delta': 'δ',
+        r'\\theta': 'θ', r'\\lambda': 'λ', r'\\mu': 'μ', r'\\sigma': 'σ',
+        r'\\pi': 'π', r'\\rightarrow': '→', r'\\leftarrow': '←',
+        r'\\_': '_', r'\\{': '{', r'\\}': '}',
+    }
+    
+    for latex, symbol in latex_replacements.items():
+        text = re.sub(latex, symbol, text)
+    
+    text = re.sub(r'_\{([^}]+)\}', r'_\1', text)
+    text = re.sub(r'\^\{([^}]+)\}', r'^\1', text)
+    text = re.sub(r'\\[a-zA-Z]+\{([^}]*)\}', r'\1', text)
+    text = re.sub(r'\\[a-zA-Z]+', '', text)
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
+    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
+    
+    return text
+
+def setup_google_drive_connection():
+    """Setup Google Drive connection"""
+    if not GDRIVE_AVAILABLE:
+        return None
+    try:
+        credentials = service_account.Credentials.from_service_account_info(
+            GDRIVE_CREDENTIALS,
+            scopes=['https://www.googleapis.com/auth/drive.file']
+        )
+        service = build('drive', 'v3', credentials=credentials)
+        service.files().list(pageSize=1).execute()
+        return service
+    except Exception as e:
+        st.error(f"❌ Drive connection failed: {str(e)}")
+        return None
+
+def extract_folder_id_from_url(url):
+    """Extract folder ID from URL"""
+    patterns = [r'folders/([a-zA-Z0-9_-]+)', r'id=([a-zA-Z0-9_-]+)']
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    if re.match(r'^[a-zA-Z0-9_-]+, url):
+        return url
+    return None
+
+def create_or_use_folder(service, folder_name, parent_id=None):
+    """Create or use existing folder"""
+    try:
+        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+        if parent_id:
+            query += f" and '{parent_id}' in parents"
+        
+        results = service.files().list(q=query, fields="files(id, name, webViewLink)", spaces='drive').execute()
+        folders = results.get('files', [])
+        
+        if folders:
+            st.info(f"✅ Using folder: {folder_name}")
+            return folders[0]['id']
+        
+        file_metadata = {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
+        if parent_id:
+            file_metadata['parents'] = [parent_id]
+        
+        folder = service.files().create(body=file_metadata, fields='id,webViewLink').execute()
+        st.success(f"✅ Created folder: {folder_name}")
+        return folder.get('id')
+    except Exception as e:
+        st.error(f"❌ Folder error: {str(e)}")
+        if 'forbidden' in str(e).lower() or '403' in str(e):
+            st.error("🔒 Permission denied! Share folder with:")
+            st.code("curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
+        return None
+
+def upload_to_gdrive(service, file_buffer, filename, folder_id, mime_type='application/pdf'):
+    """Upload file to Google Drive"""
+    for attempt in range(3):
+        try:
+            file_metadata = {'name': filename, 'parents': [folder_id]}
+            file_buffer.seek(0)
+            media = MediaIoBaseUpload(file_buffer, mimetype=mime_type, resumable=True, chunksize=1024*1024)
+            file = service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
+            return file.get('webViewLink')
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+            else:
+                st.error(f"❌ Upload failed: {str(e)}")
+                return None
+    return None
+
+def setup_gdrive_for_compilation():
+    """Setup Drive with timestamped subfolder"""
+    with st.spinner("🔗 Connecting to Google Drive..."):
+        service = setup_google_drive_connection()
+        if not service:
+            return None, None
+        
+        st.success("✅ Connected to Google Drive")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        folder_name = f"{st.session_state.course_code}_{timestamp}"
+        st.info(f"📁 Creating: {folder_name}")
+        
+        folder_id = create_or_use_folder(service, folder_name, st.session_state.gdrive_folder_id)
+        if folder_id:
+            st.success("✅ Subfolder ready")
+            return service, folder_id
+        return None, None
+
+# ============================================================================
+# CONTENT GENERATION (PHASE 3)
+# ============================================================================
+
+def generate_content(section_info, course_context):
+    """Generate academic content"""
+    system_prompt = f"""You are an expert academic content developer for {course_context['target_audience']}.
+
+Generate comprehensive content following eGyankosh standards:
+- 4-5 pages (1,000-1,500 words)
+- Academic tone, Grade 5 English
+- Use plain text for equations (no LaTeX)
+
+STRUCTURE:
+1. Introduction
+2. Learning Objectives (Bloom's Taxonomy)
+3. Detailed Content
+4. Examples & Case Studies
+5. CHECK YOUR PROGRESS (5-7 questions)
+6. Summary
+7. Key Terms
+
+Map to PO/CO/PSO if provided."""
+
+    user_prompt = f"""Write content for:
+**Topic:** {section_info['section_number']} {section_info['section_title']}
+**Course:** {course_context['course_title']}
+**Description:** {section_info['description']}
+
+Use **bold** for key terms, *italics* for emphasis. No LaTeX - use plain text for math."""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    return make_api_call(messages, max_tokens=2500)
+
+def generate_outline_with_ai():
+    """Generate course outline with AI"""
+    num_units = st.session_state.num_units
+    sections_per_unit = st.session_state.sections_per_unit
+    
+    system_prompt = """Create comprehensive course outline in JSON format:
+[{"unit_number": 1, "unit_title": "Title", "sections": [{"section_number": "1.1", "section_title": "Title", "description": "2-3 sentences"}]}]
+
+Return ONLY JSON, no markdown."""
+
+    user_prompt = f"""Create outline for:
+**Course:** {st.session_state.course_title}
+**Code:** {st.session_state.course_code}
+**Target:** {st.session_state.target_audience}
+
+Generate {num_units} units with {sections_per_unit} sections each."""
+
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    
+    with st.expander("🔍 AI Generation", expanded=True):
+        outline_str = make_api_call(messages, max_tokens=3000)
+    
+    if outline_str:
+        try:
+            outline_str = outline_str.strip()
+            json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', outline_str, re.DOTALL)
+            if json_match:
+                outline_str = json_match.group(1)
+            
+            parsed = json.loads(outline_str.strip())
+            if isinstance(parsed, list) and len(parsed) > 0:
+                st.success(f"✅ Generated {len(parsed)} units")
+                return parsed
+        except json.JSONDecodeError as e:
+            st.error(f"❌ JSON error: {str(e)}")
+    return None
+
+def generate_image_prompt_for_section(section_info, course_context):
+    """Generate image prompt"""
+    system_prompt = """Create a detailed image generation prompt for educational content.
+2-3 sentences, specific, suitable for DALL-E/Midjourney."""
+
+    user_prompt = f"""Create image prompt for:
+**Section:** {section_info['section_title']}
+**Course:** {course_context['course_title']}
+**Description:** {section_info['description']}"""
+
+    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
+    prompt = make_api_call(messages, max_tokens=200)
+    return prompt if prompt else f"Educational diagram about {section_info['section_title']}"
+
+# Continuing in next message due to length...
