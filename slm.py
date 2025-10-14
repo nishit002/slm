@@ -148,8 +148,7 @@ def initialize_session_state():
 # ============================================================================
 # Phase 1 Complete
 # ============================================================================
-print("Phase 1: Imports and Configuration loaded successfully")
-"""
+print("Phase 1: Imports and Configuration loaded successfully")"""
 PHASE 2: HELPER FUNCTIONS
 ==========================
 - API communication with detailed logging
@@ -2588,451 +2587,208 @@ def show_sidebar_status():
 # Phase 4 Part 2 Complete
 # ============================================================================
 print("Phase 4 Part 2: Content Generation, Compilation, and Sidebar loaded successfully")"""
-AI CURRICULUM GENERATOR - COMPLETE ALL-IN-ONE FILE
-===================================================
-Version: 2.0 - Complete with All Fixes
-Last Updated: 2025-01-14
+AI CURRICULUM GENERATOR - COMPLETE APPLICATION
+================================================
+FINAL INTEGRATION - ALL PHASES COMBINED
 
-✅ ALL FIXES INCLUDED:
-- Fixed LaTeX equation rendering (converts to Unicode symbols)
-- Automatic timestamped Google Drive subfolders
-- Image upload for each section
-- AI image prompt generation
-- Enhanced error handling
-- Complete PDF/DOCX compilation
-- Academic outcome mapping (PEO/PO/CO/PSO)
+To use this application, you need to combine all 4 phase files:
+1. Phase 1: Imports and Configuration
+2. Phase 2: Helper Functions
+3. Phase 3: Content Generation and Compilation
+4. Phase 4: UI Pages (Part 1 and Part 2)
+5. This file: Main Application
 
-INSTRUCTIONS:
-1. Save this entire file as 'curriculum_generator.py'
-2. Install requirements: pip install streamlit requests pillow PyPDF2 reportlab python-docx google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client
-3. Run: streamlit run curriculum_generator.py
-4. Share Google Drive folder with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com
+Features:
+✅ Fixed LaTeX equation rendering
+✅ Automatic timestamped Google Drive subfolders
+✅ Image upload for each section
+✅ AI-powered image prompt generation
+✅ Complete PDF/DOCX compilation
+✅ Enhanced error handling
 """
 
 # ============================================================================
-# IMPORTS AND CONFIGURATION (PHASE 1)
+# MAIN APPLICATION
 # ============================================================================
 
-import streamlit as st
-import requests
-import json
-import time
-import os
-import re
-from datetime import datetime
-from io import BytesIO
-from PIL import Image as PilImage
-
-# PDF imports
-try:
-    import PyPDF2
-    PYPDF2_AVAILABLE = True
-except ImportError:
-    PYPDF2_AVAILABLE = False
-
-# Google Drive imports
-try:
-    from google.oauth2 import service_account
-    from googleapiclient.discovery import build
-    from googleapiclient.http import MediaIoBaseUpload
-    GDRIVE_AVAILABLE = True
-except ImportError:
-    GDRIVE_AVAILABLE = False
-
-# ReportLab imports
-try:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import inch
-    from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, PageBreak,
-        Table, TableStyle, Image, KeepTogether
+def main():
+    """Main application entry point"""
+    
+    # Page configuration
+    st.set_page_config(
+        page_title="AI Curriculum Generator",
+        page_icon="🎓",
+        layout="wide",
+        initial_sidebar_state="expanded"
     )
-    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
-    from reportlab.lib import colors
-    REPORTLAB_AVAILABLE = True
-except ImportError:
-    REPORTLAB_AVAILABLE = False
-
-# DOCX imports
-try:
-    from docx import Document
-    from docx.shared import Inches, Pt, RGBColor
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.style import WD_STYLE_TYPE
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
-
-# Configuration
-DEFAULT_API_KEY = "xai-6QJwG3u6540lVZyXbFBArvLQ43ZyJsrnq65pyCWhxh5zXqNvtwe6LdTURbTwvE2sA3Uxlb9gn82Vamgu"
-API_URL = "https://api.x.ai/v1/chat/completions"
-
-# Google Drive Credentials
-GDRIVE_CREDENTIALS = {
-    "type": "service_account",
-    "project_id": "dynamic-wording-475018-e2",
-    "private_key_id": "2e97986797c2f143cc94209e0b0f97922146c958",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCJ/1wVoHvZvFvM\nxXxq1Zzd3XsC5g24nw9/TUdIvAvGsZU+6ZF9fxYScHpQzy2LpEwKYtaHmxsm/Ia8\n4eX33tcysd7K9vEWCPW1RckbNlzuLbCUHm5WU7pxhCB8AEBy2roD82RRkZvGhzgs\nBQFK4AbDEbuglT1BPej5+pSwJti4JaGjkozgum8ecvaZv3FLof5zp2/s0LDICOGB\nUVZCXvXDKetMLoZYJRm/W41T074NUXdmCCFtuyiXszNzzQa/HVy7yqo/5UxXQyRs\nZgAKSmp7EhtXkEozlBoMGhFXQHH6oIs9j4FtFKZ3w7/oLgCg2MqgX+G/1W7znaK6\n4i+vjrWTAgMBAAECggEAIzWh96yqXQxHufAbhiC5tQwpMjyjfJss95SunvrH4Gr4\nAwTSR9xws8S6GLs7yjjh4/aC+TeUjnZ5JGFY7U0QyFEE4PFv4ujnVFiZbtWIkYbb\n2ncHPQSA+iy1ox3nU8bGFnL4Ai3uOpHOvcCLK2EMqKHyJw9dATP8KSgL3wQSYK1t\nbbJQbuBec1W92//i1x2S2Ac0ppWyP379K3BiVcqPUUN83cqvklCeAdUNOfNro4o6\nSVgrAx4NF+EhnO158CNvJ70cKhY1Cyz3+ihPg2Z6UDL8RpcddrCScKYJqHp1Vsz+\nWHngLqR0InLCefcY16Pd90yFDWFlwm7xCUPjdOYAPQKBgQC9F66IHAvrLdGSz9OO\nxUuZQNPDU18/KUjO74/KNF4vSzd2Ye65rY5ai/BNeGNCUxRVyiUwlsdaEplPhEce\n7+3U0sP0NoxrOCYh0r0sBd7QpZWx5YBFsz/s3MVe10BvFaZWUOqUQHHOQRquyeEu\nCHsx2s5D86Zl6wNG9XSESV9A/wKBgQC602fqsWza40zqeqzN0YY/Bb0+LJoGSfwh\nMuWRAyhjJHGV/LomA2uLuwvLAaJ5vOOv+tCGhnQPV4s8P5NlNXDOggq7OTUBxWgG\nZxpJBop0RtV71M2/v6v/iyKpI05cc6prGRWv56oFQ3vdyB79EXBJx3epRBrW+URt\nDXgRq7b3bQKBgGAImvc9Z0A1sO4i5orn4JEgv2u/9+uYCAYw3JIRLpROWwigjCF4\n54dM8uolbiPNFdLMKz8WFIDGWV5tC8HGkL85m5N38LCzf4pGARVOle7ZacFDkXXU\np26gYQzdvTetgyDrT3ejkyjxH6ANn3NFk2uqeH9CSwwP40Yyes6EhP/5AoGAZ2Cj\nl9IlkdlErlrDVAAkcKsUVFsJv4Eg6p3nOZ6tsm5wC7aUqoQp9l/B3stAxGwo8S+w\nQ0AS6IpgmS30uYQgr6R1m7PECP7a2PAkM1RTOJQZfTP7xaah3f13aHAI5E98dVak\nEXn3MoJtAAPEYfRMVgbxx8/PqjS0EEPrtJt32uECgYEAi/8JnI8MAhq+eDcVuO45\nu/itREj4sHS/4dcTtL2mbUz8DKWyDpe6LC7/oMIl4459Ktp7MOanR/yPIvJfU8t6\ni+05OoFDvrDkXraE28wIHO0qIT1NY/htaNByBHNvs9b1Rj99O7o2sH8k8fG2OM0u\nxTEWjBaUn1bG59flELY88zk=\n-----END PRIVATE KEY-----\n",
-    "client_email": "curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com",
-    "client_id": "113202445348377169696",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/curriculum-generator%40dynamic-wording-475018-e2.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-}
-
-def initialize_session_state():
-    """Initialize all session state variables"""
-    defaults = {
-        'step': 'syllabus_upload',
-        'api_key': DEFAULT_API_KEY,
-        'course_title': 'Organizational Behaviour',
-        'course_code': 'MBA101',
-        'credits': 3,
-        'target_audience': 'Postgraduate (MBA)',
-        'num_units': 4,
-        'sections_per_unit': 8,
-        'program_objectives': '',
-        'program_outcomes': '',
-        'course_outcomes': '',
-        'specialized_outcomes': '',
-        'use_egyankosh_style': True,
-        'document_heading': '',
-        'logo': None,
-        'gdrive_folder_url': '',
-        'gdrive_folder_id': '',
-        'content': {},
-        'images': {},
-        'image_prompts': {},
-        'paused': False,
-        'extracted_structure': None,
-        'outline': None,
-        'approved_outline': None,
-        'sections_to_process': [],
-        'generation_start_time': None,
-    }
     
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    # Title and description
+    st.title("🎓 AI Curriculum Generator")
+    st.caption("Professional academic materials with eGyankosh standards | Powered by Grok AI")
+    
+    # Initialize session state
+    initialize_session_state()
+    
+    # Show navigation
+    show_navigation()
+    
+    # Route to appropriate page based on current step
+    step = st.session_state.step
+    
+    if step == 'syllabus_upload':
+        show_syllabus_upload_page()
+    
+    elif step == 'configuration':
+        show_configuration_page()
+    
+    elif step == 'outline_generation':
+        show_outline_page()
+    
+    elif step == 'content_generation':
+        show_content_generation_page()
+    
+    elif step == 'compilation':
+        show_compilation_page()
+    
+    else:
+        st.error(f"❌ Unknown step: {step}")
+        st.session_state.step = 'syllabus_upload'
+        st.rerun()
+    
+    # Show sidebar status
+    show_sidebar_status()
+    
+    # Footer
+    st.divider()
+    with st.expander("ℹ️ About This Application", expanded=False):
+        st.markdown("""
+        ### AI Curriculum Generator
+        
+        **Features:**
+        - 📄 PDF syllabus extraction
+        - 🤖 AI-powered content generation
+        - 🖼️ Image upload and prompt generation
+        - 📚 Professional PDF/DOCX compilation
+        - ☁️ Google Drive auto-upload with timestamped subfolders
+        - 🎯 Academic outcome mapping (PEO/PO/CO/PSO)
+        - ✍️ Fixed LaTeX equation rendering
+        
+        **Technologies:**
+        - Grok AI (grok-2-1212)
+        - ReportLab (PDF generation)
+        - python-docx (DOCX generation)
+        - Google Drive API
+        - Streamlit
+        
+        **Version:** 2.0 (Complete with all fixes)
+        **Last Updated:** 2025-01-14
+        """)
 
 # ============================================================================
-# HELPER FUNCTIONS (PHASE 2)
+# APPLICATION ENTRY POINT
 # ============================================================================
 
-def get_api_headers():
-    """Get API headers"""
-    return {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {st.session_state.api_key}"
-    }
-
-def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
-    """Make API call with detailed logging"""
-    headers = get_api_headers()
-    payload = {
-        "messages": messages,
-        "model": "grok-2-1212",
-        "stream": False,
-        "temperature": 0.3,
-        "max_tokens": max_tokens
-    }
-    
-    for attempt in range(retries):
-        try:
-            st.write(f"🔄 API Call Attempt {attempt + 1}/{retries}")
-            response = requests.post(API_URL, headers=headers, json=payload, timeout=timeout)
-            st.write(f"📡 Status: {response.status_code}")
-            response.raise_for_status()
-            result = response.json()
-            
-            if 'choices' in result and len(result['choices']) > 0:
-                content = result['choices'][0]['message']['content']
-                word_count = len(content.split())
-                st.write(f"✅ Response: {word_count:,} words")
-                return content
-                
-        except requests.exceptions.HTTPError as e:
-            st.error(f"❌ HTTP Error {e.response.status_code}")
-            if e.response.status_code == 401:
-                return None
-            elif e.response.status_code == 429:
-                time.sleep(10)
-        except requests.exceptions.Timeout:
-            st.error(f"⏱️ Timeout after {timeout}s")
-            if attempt < retries - 1:
-                timeout += 30
-        except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-    
-    return None
-
-def extract_pdf_text(pdf_file):
-    """Extract text from PDF"""
-    if not PYPDF2_AVAILABLE:
-        return None
-    try:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() + "\n"
-        return text
-    except Exception as e:
-        st.error(f"Error: {str(e)}")
-        return None
-
-def parse_syllabus_structure(text):
-    """Parse syllabus structure"""
-    structure = {'course_info': {}, 'units': []}
-    
-    patterns = {
-        'title': r'(?:Course|Subject)\s*(?:Title|Name)?\s*:?\s*(.+)',
-        'code': r'(?:Course|Subject)\s*Code\s*:?\s*([A-Z0-9]+)',
-        'credits': r'Credits?\s*:?\s*(\d+)',
-    }
-    
-    for key, pattern in patterns.items():
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            structure['course_info'][key] = match.group(1).strip()
-    
-    unit_pattern = r'UNIT[\s-]*(\d+)\s*:?\s*(.+?)(?=UNIT[\s-]*\d+|$)'
-    units = re.finditer(unit_pattern, text, re.IGNORECASE | re.DOTALL)
-    
-    for unit_match in units:
-        unit_num = unit_match.group(1)
-        unit_content = unit_match.group(2)
-        title_match = re.search(r'^(.+?)(?:\n|$)', unit_content)
-        unit_title = title_match.group(1).strip() if title_match else f"Unit {unit_num}"
-        
-        topics = []
-        for line in unit_content.split('\n'):
-            if re.match(r'^\s*[\d.]+\s+(.+?), line):
-                topic = re.match(r'^\s*[\d.]+\s+(.+?), line).group(1).strip()
-                if 5 < len(topic) < 200:
-                    topics.append(topic)
-        
-        structure['units'].append({
-            'unit_number': int(unit_num),
-            'unit_title': unit_title,
-            'topics': topics
-        })
-    
-    return structure
-
-def clean_text_for_pdf(text):
-    """Clean text for PDF with LaTeX handling (FIXED)"""
-    if not text:
-        return ""
-    
-    # Convert LaTeX equations to readable format
-    text = re.sub(r'\\\((.*?)\\\)', r'[\1]', text)
-    text = re.sub(r'\$([^\$]+?)\, r'[\1]', text)
-    text = re.sub(r'\\\[(.*?)\\\]', r'[\1]', text, flags=re.DOTALL)
-    text = re.sub(r'\$\$(.*?)\$\, r'[\1]', text, flags=re.DOTALL)
-    
-    # LaTeX to Unicode symbols
-    latex_replacements = {
-        r'\\leq': '≤', r'\\geq': '≥', r'\\neq': '≠', r'\\approx': '≈',
-        r'\\times': '×', r'\\div': '÷', r'\\pm': '±', r'\\sum': 'Σ',
-        r'\\prod': 'Π', r'\\int': '∫', r'\\infty': '∞', r'\\partial': '∂',
-        r'\\alpha': 'α', r'\\beta': 'β', r'\\gamma': 'γ', r'\\delta': 'δ',
-        r'\\theta': 'θ', r'\\lambda': 'λ', r'\\mu': 'μ', r'\\sigma': 'σ',
-        r'\\pi': 'π', r'\\rightarrow': '→', r'\\leftarrow': '←',
-        r'\\_': '_', r'\\{': '{', r'\\}': '}',
-    }
-    
-    for latex, symbol in latex_replacements.items():
-        text = re.sub(latex, symbol, text)
-    
-    text = re.sub(r'_\{([^}]+)\}', r'_\1', text)
-    text = re.sub(r'\^\{([^}]+)\}', r'^\1', text)
-    text = re.sub(r'\\[a-zA-Z]+\{([^}]*)\}', r'\1', text)
-    text = re.sub(r'\\[a-zA-Z]+', '', text)
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'\*(.+?)\*', r'<i>\1</i>', text)
-    text = re.sub(r'^#+\s+', '', text, flags=re.MULTILINE)
-    
-    return text
-
-def setup_google_drive_connection():
-    """Setup Google Drive connection"""
-    if not GDRIVE_AVAILABLE:
-        return None
-    try:
-        credentials = service_account.Credentials.from_service_account_info(
-            GDRIVE_CREDENTIALS,
-            scopes=['https://www.googleapis.com/auth/drive.file']
-        )
-        service = build('drive', 'v3', credentials=credentials)
-        service.files().list(pageSize=1).execute()
-        return service
-    except Exception as e:
-        st.error(f"❌ Drive connection failed: {str(e)}")
-        return None
-
-def extract_folder_id_from_url(url):
-    """Extract folder ID from URL"""
-    patterns = [r'folders/([a-zA-Z0-9_-]+)', r'id=([a-zA-Z0-9_-]+)']
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    if re.match(r'^[a-zA-Z0-9_-]+, url):
-        return url
-    return None
-
-def create_or_use_folder(service, folder_name, parent_id=None):
-    """Create or use existing folder"""
-    try:
-        query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
-        if parent_id:
-            query += f" and '{parent_id}' in parents"
-        
-        results = service.files().list(q=query, fields="files(id, name, webViewLink)", spaces='drive').execute()
-        folders = results.get('files', [])
-        
-        if folders:
-            st.info(f"✅ Using folder: {folder_name}")
-            return folders[0]['id']
-        
-        file_metadata = {'name': folder_name, 'mimeType': 'application/vnd.google-apps.folder'}
-        if parent_id:
-            file_metadata['parents'] = [parent_id]
-        
-        folder = service.files().create(body=file_metadata, fields='id,webViewLink').execute()
-        st.success(f"✅ Created folder: {folder_name}")
-        return folder.get('id')
-    except Exception as e:
-        st.error(f"❌ Folder error: {str(e)}")
-        if 'forbidden' in str(e).lower() or '403' in str(e):
-            st.error("🔒 Permission denied! Share folder with:")
-            st.code("curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
-        return None
-
-def upload_to_gdrive(service, file_buffer, filename, folder_id, mime_type='application/pdf'):
-    """Upload file to Google Drive"""
-    for attempt in range(3):
-        try:
-            file_metadata = {'name': filename, 'parents': [folder_id]}
-            file_buffer.seek(0)
-            media = MediaIoBaseUpload(file_buffer, mimetype=mime_type, resumable=True, chunksize=1024*1024)
-            file = service.files().create(body=file_metadata, media_body=media, fields='id,webViewLink').execute()
-            return file.get('webViewLink')
-        except Exception as e:
-            if attempt < 2:
-                time.sleep(2)
-            else:
-                st.error(f"❌ Upload failed: {str(e)}")
-                return None
-    return None
-
-def setup_gdrive_for_compilation():
-    """Setup Drive with timestamped subfolder"""
-    with st.spinner("🔗 Connecting to Google Drive..."):
-        service = setup_google_drive_connection()
-        if not service:
-            return None, None
-        
-        st.success("✅ Connected to Google Drive")
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        folder_name = f"{st.session_state.course_code}_{timestamp}"
-        st.info(f"📁 Creating: {folder_name}")
-        
-        folder_id = create_or_use_folder(service, folder_name, st.session_state.gdrive_folder_id)
-        if folder_id:
-            st.success("✅ Subfolder ready")
-            return service, folder_id
-        return None, None
+if __name__ == "__main__":
+    main()
 
 # ============================================================================
-# CONTENT GENERATION (PHASE 3)
+# INSTALLATION REQUIREMENTS
 # ============================================================================
+"""
+Required packages - install with pip:
 
-def generate_content(section_info, course_context):
-    """Generate academic content"""
-    system_prompt = f"""You are an expert academic content developer for {course_context['target_audience']}.
+pip install streamlit
+pip install requests
+pip install pillow
+pip install PyPDF2
+pip install reportlab
+pip install python-docx
+pip install google-auth
+pip install google-auth-oauthlib
+pip install google-auth-httplib2
+pip install google-api-python-client
 
-Generate comprehensive content following eGyankosh standards:
-- 4-5 pages (1,000-1,500 words)
-- Academic tone, Grade 5 English
-- Use plain text for equations (no LaTeX)
+Or use requirements.txt:
 
-STRUCTURE:
-1. Introduction
-2. Learning Objectives (Bloom's Taxonomy)
-3. Detailed Content
-4. Examples & Case Studies
-5. CHECK YOUR PROGRESS (5-7 questions)
-6. Summary
-7. Key Terms
+streamlit>=1.29.0
+requests>=2.31.0
+pillow>=10.0.0
+PyPDF2>=3.0.0
+reportlab>=4.0.0
+python-docx>=1.1.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.108.0
+"""
 
-Map to PO/CO/PSO if provided."""
+# ============================================================================
+# HOW TO RUN
+# ============================================================================
+"""
+1. Save all phases to a single file named 'curriculum_generator.py':
+   - Copy Phase 1 content
+   - Copy Phase 2 content
+   - Copy Phase 3 content
+   - Copy Phase 4 Part 1 content
+   - Copy Phase 4 Part 2 content
+   - Copy this final integration code
 
-    user_prompt = f"""Write content for:
-**Topic:** {section_info['section_number']} {section_info['section_title']}
-**Course:** {course_context['course_title']}
-**Description:** {section_info['description']}
+2. Install requirements:
+   pip install -r requirements.txt
 
-Use **bold** for key terms, *italics* for emphasis. No LaTeX - use plain text for math."""
+3. Run the application:
+   streamlit run curriculum_generator.py
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
-    return make_api_call(messages, max_tokens=2500)
+4. Open browser at:
+   http://localhost:8501
 
-def generate_outline_with_ai():
-    """Generate course outline with AI"""
-    num_units = st.session_state.num_units
-    sections_per_unit = st.session_state.sections_per_unit
-    
-    system_prompt = """Create comprehensive course outline in JSON format:
-[{"unit_number": 1, "unit_title": "Title", "sections": [{"section_number": "1.1", "section_title": "Title", "description": "2-3 sentences"}]}]
+5. Configure Google Drive:
+   - Go to your Google Drive folder
+   - Share with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com
+   - Give Editor permissions
+   - Copy folder URL and paste in app
+"""
 
-Return ONLY JSON, no markdown."""
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+"""
+Common Issues and Solutions:
 
-    user_prompt = f"""Create outline for:
-**Course:** {st.session_state.course_title}
-**Code:** {st.session_state.course_code}
-**Target:** {st.session_state.target_audience}
+1. **LaTeX equations not rendering:**
+   - Fixed! Now converts LaTeX to Unicode symbols
+   - Example: \leq becomes ≤
 
-Generate {num_units} units with {sections_per_unit} sections each."""
+2. **Google Drive permission error:**
+   - Share folder with service account email
+   - Give Editor permissions
+   - Wait 1-2 minutes for permissions to propagate
 
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-    
-    with st.expander("🔍 AI Generation", expanded=True):
-        outline_str = make_api_call(messages, max_tokens=3000)
-    
-    if outline_str:
-        try:
-            outline_str = outline_str.strip()
-            json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', outline_str, re.DOTALL)
-            if json_match:
-                outline_str = json_match.group(1)
-            
-            parsed = json.loads(outline_str.strip())
-            if isinstance(parsed, list) and len(parsed) > 0:
-                st.success(f"✅ Generated {len(parsed)} units")
-                return parsed
-        except json.JSONDecodeError as e:
-            st.error(f"❌ JSON error: {str(e)}")
-    return None
+3. **API errors:**
+   - Check API key starts with 'xai-'
+   - Test API using the test button
+   - Check internet connection
 
-def generate_image_prompt_for_section(section_info, course_context):
-    """Generate image prompt"""
-    system_prompt = """Create a detailed image generation prompt for educational content.
-2-3 sentences, specific, suitable for DALL-E/Midjourney."""
+4. **PDF compilation fails:**
+   - Check ReportLab is installed
+   - Try DOCX format instead
+   - Check error logs in UI
 
-    user_prompt = f"""Create image prompt for:
-**Section:** {section_info['section_title']}
-**Course:** {course_context['course_title']}
-**Description:** {section_info['description']}"""
+5. **Images not appearing:**
+   - Ensure images are PNG/JPG/JPEG
+   - Check file size < 5MB
+   - Upload one image at a time
 
-    messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-    prompt = make_api_call(messages, max_tokens=200)
-    return prompt if prompt else f"Educational diagram about {section_info['section_title']}"
+6. **Content too short:**
+   - Check API logs in UI
+   - Increase max_tokens if needed
+   - Check API rate limits
+"""
 
-# Continuing in next message due to length...
+# ============================================================================
+# COMPLETE APPLICATION - READY TO USE
+# ============================================================================
+print("✅ All components loaded successfully!")
+print("🎓 AI Curriculum Generator ready!")
+print("🚀 Run with: streamlit run curriculum_generator.py")
