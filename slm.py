@@ -74,20 +74,36 @@ except ImportError:
 DEFAULT_API_KEY = "xai-6QJwG3u6540lVZyXbFBArvLQ43ZyJsrnq65pyCWhxh5zXqNvtwe6LdTURbTwvE2sA3Uxlb9gn82Vamgu"
 API_URL = "https://api.x.ai/v1/chat/completions"
 
-# Google Drive Service Account Credentials
-GDRIVE_CREDENTIALS = {
-    "type": "service_account",
-    "project_id": "dynamic-wording-475018-e2",
-    "private_key_id": "2e97986797c2f143cc94209e0b0f97922146c958",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCJ/1wVoHvZvFvM\nxXxq1Zzd3XsC5g24nw9/TUdIvAvGsZU+6ZF9fxYScHpQzy2LpEwKYtaHmxsm/Ia8\n4eX33tcysd7K9vEWCPW1RckbNlzuLbCUHm5WU7pxhCB8AEBy2roD82RRkZvGhzgs\nBQFK4AbDEbuglT1BPej5+pSwJti4JaGjkozgum8ecvaZv3FLof5zp2/s0LDICOGB\nUVZCXvXDKetMLoZYJRm/W41T074NUXdmCCFtuyiXszNzzQa/HVy7yqo/5UxXQyRs\nZgAKSmp7EhtXkEozlBoMGhFXQHH6oIs9j4FtFKZ3w7/oLgCg2MqgX+G/1W7znaK6\n4i+vjrWTAgMBAAECggEAIzWh96yqXQxHufAbhiC5tQwpMjyjfJss95SunvrH4Gr4\nAwTSR9xws8S6GLs7yjjh4/aC+TeUjnZ5JGFY7U0QyFEE4PFv4ujnVFiZbtWIkYbb\n2ncHPQSA+iy1ox3nU8bGFnL4Ai3uOpHOvcCLK2EMqKHyJw9dATP8KSgL3wQSYK1t\nbbJQbuBec1W92//i1x2S2Ac0ppWyP379K3BiVcqPUUN83cqvklCeAdUNOfNro4o6\nSVgrAx4NF+EhnO158CNvJ70cKhY1Cyz3+ihPg2Z6UDL8RpcddrCScKYJqHp1Vsz+\nWHngLqR0InLCefcY16Pd90yFDWFlwm7xCUPjdOYAPQKBgQC9F66IHAvrLdGSz9OO\nxUuZQNPDU18/KUjO74/KNF4vSzd2Ye65rY5ai/BNeGNCUxRVyiUwlsdaEplPhEce\n7+3U0sP0NoxrOCYh0r0sBd7QpZWx5YBFsz/s3MVe10BvFaZWUOqUQHHOQRquyeEu\nCHsx2s5D86Zl6wNG9XSESV9A/wKBgQC602fqsWza40zqeqzN0YY/Bb0+LJoGSfwh\nMuWRAyhjJHGV/LomA2uLuwvLAaJ5vOOv+tCGhnQPV4s8P5NlNXDOggq7OTUBxWgG\nZxpJBop0RtV71M2/v6v/iyKpI05cc6prGRWv56oFQ3vdyB79EXBJx3epRBrW+URt\nDXgRq7b3bQKBgGAImvc9Z0A1sO4i5orn4JEgv2u/9+uYCAYw3JIRLpROWwigjCF4\n54dM8uolbiPNFdLMKz8WFIDGWV5tC8HGkL85m5N38LCzf4pGARVOle7ZacFDkXXU\np26gYQzdvTetgyDrT3ejkyjxH6ANn3NFk2uqeH9CSwwP40Yyes6EhP/5AoGAZ2Cj\nl9IlkdlErlrDVAAkcKsUVFsJv4Eg6p3nOZ6tsm5wC7aUqoQp9l/B3stAxGwo8S+w\nQ0AS6IpgmS30uYQgr6R1m7PECP7a2PAkM1RTOJQZfTP7xaah3f13aHAI5E98dVak\nEXn3MoJtAAPEYfRMVgbxx8/PqjS0EEPrtJt32uECgYEAi/8JnI8MAhq+eDcVuO45\nu/itREj4sHS/4dcTtL2mbUz8DKWyDpe6LC7/oMIl4459Ktp7MOanR/yPIvJfU8t6\ni+05OoFDvrDkXraE28wIHO0qIT1NY/htaNByBHNvs9b1Rj99O7o2sH8k8fG2OM0u\nxTEWjBaUn1bG59flELY88zk=\n-----END PRIVATE KEY-----\n",
-    "client_email": "curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com",
-    "client_id": "113202445348377169696",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/curriculum-generator%40dynamic-wording-475018-e2.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-}
+# Google Drive Configuration
+def get_google_drive_credentials():
+    """Get Google Drive credentials from Streamlit secrets or fallback to hardcoded"""
+    try:
+        # Try to get from Streamlit secrets first
+        if hasattr(st, 'secrets') and 'GOOGLE_DRIVE_CREDENTIALS' in st.secrets:
+            return dict(st.secrets['GOOGLE_DRIVE_CREDENTIALS'])
+    except Exception:
+        pass
+    
+    # Fallback to hardcoded credentials stored as JSON string
+    credentials_json = """{
+  "type": "service_account",
+  "project_id": "dynamic-wording-475018-e2",
+  "private_key_id": "2e97986797c2f143cc94209e0b0f97922146c958",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCJ/1wVoHvZvFvM\\nxXxq1Zzd3XsC5g24nw9/TUdIvAvGsZU+6ZF9fxYScHpQzy2LpEwKYtaHmxsm/Ia8\\n4eX33tcysd7K9vEWCPW1RckbNlzuLbCUHm5WU7pxhCB8AEBy2roD82RRkZvGhzgs\\nBQFK4AbDEbuglT1BPej5+pSwJti4JaGjkozgum8ecvaZv3FLof5zp2/s0LDICOGB\\nUVZCXvXDKetMLoZYJRm/W41T074NUXdmCCFtuyiXszNzzQa/HVy7yqo/5UxXQyRs\\nZgAKSmp7EhtXkEozlBoMGhFXQHH6oIs9j4FtFKZ3w7/oLgCg2MqgX+G/1W7znaK6\\n4i+vjrWTAgMBAAECggEAIzWh96yqXQxHufAbhiC5tQwpMjyjfJss95SunvrH4Gr4\\nAwTSR9xws8S6GLs7yjjh4/aC+TeUjnZ5JGFY7U0QyFEE4PFv4ujnVFiZbtWIkYbb\\n2ncHPQSA+iy1ox3nU8bGFnL4Ai3uOpHOvcCLK2EMqKHyJw9dATP8KSgL3wQSYK1t\\nbbJQbuBec1W92//i1x2S2Ac0ppWyP379K3BiVcqPUUN83cqvklCeAdUNOfNro4o6\\nSVgrAx4NF+EhnO158CNvJ70cKhY1Cyz3+ihPg2Z6UDL8RpcddrCScKYJqHp1Vsz+\\nWHngLqR0InLCefcY16Pd90yFDWFlwm7xCUPjdOYAPQKBgQC9F66IHAvrLdGSz9OO\\nxUuZQNPDU18/KUjO74/KNF4vSzd2Ye65rY5ai/BNeGNCUxRVyiUwlsdaEplPhEce\\n7+3U0sP0NoxrOCYh0r0sBd7QpZWx5YBFsz/s3MVe10BvFaZWUOqUQHHOQRquyeEu\\nCHsx2s5D86Zl6wNG9XSESV9A/wKBgQC602fqsWza40zqeqzN0YY/Bb0+LJoGSfwh\\nMuWRAyhjJHGV/LomA2uLuwvLAaJ5vOOv+tCGhnQPV4s8P5NlNXDOggq7OTUBxWgG\\nZxpJBop0RtV71M2/v6v/iyKpI05cc6prGRWv56oFQ3vdyB79EXBJx3epRBrW+URt\\nDXgRq7b3bQKBgGAImvc9Z0A1sO4i5orn4JEgv2u/9+uYCAYw3JIRLpROWwigjCF4\\n54dM8uolbiPNFdLMKz8WFIDGWV5tC8HGkL85m5N38LCzf4pGARVOle7ZacFDkXXU\\np26gYQzdvTetgyDrT3ejkyjxH6ANn3NFk2uqeH9CSwwP40Yyes6EhP/5AoGAZ2Cj\\nl9IlkdlErlrDVAAkcKsUVFsJv4Eg6p3nOZ6tsm5wC7aUqoQp9l/B3stAxGwo8S+w\\nQ0AS6IpgmS30uYQgr6R1m7PECP7a2PAkM1RTOJQZfTP7xaah3f13aHAI5E98dVak\\nEXn3MoJtAAPEYfRMVgbxx8/PqjS0EEPrtJt32uECgYEAi/8JnI8MAhq+eDcVuO45\\nu/itREj4sHS/4dcTtL2mbUz8DKWyDpe6LC7/oMIl4459Ktp7MOanR/yPIvJfU8t6\\ni+05OoFDvrDkXraE28wIHO0qIT1NY/htaNByBHNvs9b1Rj99O7o2sH8k8fG2OM0u\\nxTEWjBaUn1bG59flELY88zk=\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com",
+  "client_id": "113202445348377169696",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/curriculum-generator%40dynamic-wording-475018-e2.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}"""
+    
+    return json.loads(credentials_json)
+
+# Using a specific ID for the root folder as provided in the updates
+GDRIVE_FOLDER_ID = "1jpEIPW1evJx25CRtd-xbFRPPTywsodMy"
+
 
 # ============================================================================
 # SESSION STATE INITIALIZATION
@@ -482,53 +498,57 @@ def clean_text_for_pdf(text):
 # GOOGLE DRIVE OPERATIONS (FIXED WITH AUTO-SUBFOLDER)
 # ============================================================================
 
+# Updated setup_google_drive_connection to use new credentials function and GDRIVE_FOLDER_ID
 def setup_google_drive_connection():
-    """
-    Setup Google Drive API connection with service account
-    
-    Returns:
-        Google Drive service object or None if failed
-    """
+    """Setup Google Drive connection with proper error handling"""
     if not GDRIVE_AVAILABLE:
-        st.error("Google Drive libraries not installed")
-        return None
-        
+        st.error("Google Drive libraries not available")
+        return None, None
+    
     try:
-        # Convert credentials dict to JSON string and back to ensure proper parsing
-        # This handles the private key newlines correctly
-        import json
-        creds_json = json.dumps(GDRIVE_CREDENTIALS)
-        creds_dict = json.loads(creds_json)
+        creds_dict = get_google_drive_credentials()
         
+        # No need for additional string replacement
+        
+        # Define the required scopes
+        scopes = [
+            'https://www.googleapis.com/auth/drive',
+            'https://www.googleapis.com/auth/drive.file'
+        ]
+        
+        # Create credentials with scopes
         credentials = service_account.Credentials.from_service_account_info(
             creds_dict,
-            scopes=[
-                'https://www.googleapis.com/auth/drive',
-                'https://www.googleapis.com/auth/drive.file'
-            ]
+            scopes=scopes
         )
-        service = build('drive', 'v3', credentials=credentials)
         
-        # Test connection
-        service.files().list(pageSize=1).execute()
+        # Build the Drive service
+        drive_service = build('drive', 'v3', credentials=credentials)
         
-        st.success("✅ Google Drive connected successfully")
-        return service
+        # Test the connection by trying to get folder info
+        folder = drive_service.files().get(
+            fileId=GDRIVE_FOLDER_ID,
+            fields='id, name'
+        ).execute()
+        
+        st.success(f"Connected to Google Drive folder: {folder.get('name', 'Unknown')}")
+        return drive_service, GDRIVE_FOLDER_ID
         
     except Exception as e:
         error_msg = str(e)
-        st.error(f"❌ Google Drive connection failed: {error_msg}")
+        st.error(f"Google Drive connection failed: {error_msg}")
         
-        if 'invalid_grant' in error_msg.lower() or 'jwt' in error_msg.lower():
-            st.error("🔑 JWT Signature Error - This usually means:")
-            st.error("   1. The service account key might be incorrect or corrupted")
-            st.error("   2. The service account might have been deleted or disabled")
-            st.error("   3. The key might have been regenerated in Google Cloud Console")
-            st.info("💡 Try regenerating the service account key in Google Cloud Console")
+        if 'invalid_grant' in error_msg.lower() and 'jwt' in error_msg.lower():
+            st.warning("JWT Signature Error - This usually means:")
+            st.info("- The service account key might be incorrect or corrupted")
+            st.info("- The service account might have been deleted or disabled")
+            st.info("- The key might have been regenerated in Google Cloud Console")
+            st.info("Try regenerating the service account key in Google Cloud Console")
         
-        st.error("💡 Make sure the service account has access to the folder")
-        st.info("📧 Share folder with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
-        return None
+        st.info("Make sure the service account has access to the folder")
+        st.code(f"Share folder with: {creds_dict.get('client_email', 'N/A')}")
+        return None, None
+
 
 def extract_folder_id_from_url(url):
     """
@@ -667,7 +687,7 @@ def upload_to_gdrive(service, file_buffer, filename, folder_id, mime_type='appli
             file = service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id,webViewLink,webContentLink'
+                fields='id, webViewLink,webContentLink'
             ).execute()
             
             file_id = file.get('id')
@@ -706,9 +726,9 @@ def setup_gdrive_for_compilation():
         tuple: (service, folder_id) or (None, None) if failed
     """
     with st.spinner("🔗 Connecting to Google Drive..."):
-        gdrive_service = setup_google_drive_connection()
+        gdrive_service, gdrive_folder_id = setup_google_drive_connection()
         
-        if not gdrive_service:
+        if not gdrive_service or not gdrive_folder_id:
             st.error("❌ Google Drive connection failed")
             return None, None
         
