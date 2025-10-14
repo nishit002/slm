@@ -494,25 +494,49 @@ def setup_google_drive_connection():
         return None
         
     try:
-        # Create a copy of credentials and ensure private key has proper newlines
+        # Create a copy of credentials
         creds_dict = GDRIVE_CREDENTIALS.copy()
-        # Replace any escaped newlines with actual newlines
+        
+        # Ensure the private key is properly formatted
+        # The private key needs actual newline characters, not escaped ones
         if 'private_key' in creds_dict:
-            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+            private_key = creds_dict['private_key']
+            # If the key doesn't have actual newlines, it might have literal \n strings
+            # Replace literal \n with actual newlines if needed
+            if '\\n' in private_key:
+                private_key = private_key.replace('\\n', '\n')
+            # Ensure the key starts and ends correctly
+            if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+                st.error("Invalid private key format")
+                return None
+            creds_dict['private_key'] = private_key
         
         credentials = service_account.Credentials.from_service_account_info(
             creds_dict,
-            scopes=['https://www.googleapis.com/auth/drive.file']
+            scopes=[
+                'https://www.googleapis.com/auth/drive.file',
+                'https://www.googleapis.com/auth/drive'
+            ]
         )
         service = build('drive', 'v3', credentials=credentials)
         
         # Test connection
         service.files().list(pageSize=1).execute()
         
+        st.success("✅ Google Drive connected successfully")
         return service
         
     except Exception as e:
-        st.error(f"❌ Google Drive connection failed: {str(e)}")
+        error_msg = str(e)
+        st.error(f"❌ Google Drive connection failed: {error_msg}")
+        
+        if 'invalid_grant' in error_msg.lower() or 'jwt' in error_msg.lower():
+            st.error("🔑 JWT Signature Error - This usually means:")
+            st.error("   1. The service account key might be incorrect or corrupted")
+            st.error("   2. The service account might have been deleted or disabled")
+            st.error("   3. The key might have been regenerated in Google Cloud Console")
+            st.info("💡 Try regenerating the service account key in Google Cloud Console")
+        
         st.error("💡 Make sure the service account has access to the folder")
         st.info("📧 Share folder with: curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com")
         return None
@@ -1843,7 +1867,7 @@ def show_configuration_page():
                     3. Add this email: `curriculum-generator@dynamic-wording-475018-e2.iam.gserviceaccount.com`
                     4. Give **Editor** permissions
                     5. Click **Send**
-                    6. Come back here and continue
+                    6. Try again
                     """)
             else:
                 st.error("❌ Could not extract folder ID. Please check the URL.")
