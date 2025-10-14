@@ -685,6 +685,49 @@ def show_configuration_page():
     else:
         st.info("ℹ️ Content will be generated with general academic outcomes")
     
+    st.divider()
+    
+    # Content Structure (only if no syllabus uploaded)
+    if not st.session_state.get('extracted_structure'):
+        st.subheader("📚 Content Structure")
+        st.info("💡 Define how many units and topics you want. AI will generate relevant content for each.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            num_units = st.number_input(
+                "Number of Units",
+                min_value=1,
+                max_value=10,
+                value=st.session_state.get('num_units', 4),
+                help="How many major units/modules for this course",
+                key="num_units_config"
+            )
+            st.session_state.num_units = num_units
+        
+        with col2:
+            sections_per_unit = st.number_input(
+                "Topics per Unit",
+                min_value=3,
+                max_value=15,
+                value=st.session_state.get('sections_per_unit', 8),
+                help="How many topics/sections in each unit",
+                key="sections_per_unit_config"
+            )
+            st.session_state.sections_per_unit = sections_per_unit
+        
+        total_sections = num_units * sections_per_unit
+        total_pages = total_sections * 35
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Sections", total_sections)
+        with col2:
+            st.metric("Estimated Pages", f"~{total_pages}")
+        
+        st.caption(f"💡 AI will generate {num_units} units with {sections_per_unit} topics each")
+    else:
+        st.info("✅ Using structure from uploaded syllabus")
+    
     # Google Drive
     st.subheader("Google Drive")
     
@@ -712,13 +755,17 @@ def show_configuration_page():
             st.rerun()
 
 def show_outline_page():
-    """Outline page"""
-    st.header("📋 Step 3: Outline")
+    """Outline page - AI generated ONLY"""
+    st.header("📋 Step 3: Course Outline")
     
-    if 'outline' not in st.session_state:
+    # Check if we need to generate outline
+    if 'outline' not in st.session_state or st.session_state.outline is None:
+        
+        # Check if extracted from syllabus
         extracted = st.session_state.get('extracted_structure')
         
         if extracted and extracted.get('units'):
+            st.info("✅ Using syllabus structure")
             outline = []
             for unit in extracted['units']:
                 sections = []
@@ -735,12 +782,34 @@ def show_outline_page():
                     "sections": sections
                 })
             st.session_state.outline = outline
+            
         else:
-            st.session_state.outline = create_default_outline(
-                st.session_state.num_units,
-                st.session_state.sections_per_unit
-            )
+            # MUST generate with AI - NO DEFAULTS
+            st.warning("⚠️ No outline generated yet")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🤖 Generate with AI", type="primary", use_container_width=True, key="generate_ai_outline"):
+                    with st.spinner("🤖 AI is creating your course outline..."):
+                        generated_outline = generate_outline_with_ai()
+                        
+                        if generated_outline:
+                            st.session_state.outline = generated_outline
+                            st.success("✅ Outline generated!")
+                            st.rerun()
+                        else:
+                            st.error("❌ AI generation failed. Please try again or check your API key.")
+                            return
+            
+            with col2:
+                if st.button("← Back to Configuration", use_container_width=True, key="back_no_outline"):
+                    st.session_state.step = 'configuration'
+                    st.rerun()
+            
+            st.info("💡 Click 'Generate with AI' to create a custom outline based on your course details")
+            return
     
+    # Display outline
     outline = st.session_state.outline
     total_sections = sum(len(u.get('sections', [])) for u in outline)
     
@@ -766,23 +835,27 @@ def show_outline_page():
                 'Description': section['description']
             })
     
-    st.subheader("Edit Outline")
-    edited = st.data_editor(rows, num_rows="dynamic", use_container_width=True, key="outline_editor_unique")
+    st.subheader("✏️ Edit Outline")
+    st.caption("Click any cell to edit directly")
+    edited = st.data_editor(rows, num_rows="dynamic", use_container_width=True, height=400, key="outline_editor_unique")
     
     st.divider()
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("← Back", key="back_from_outline"):
+        if st.button("← Back", use_container_width=True, key="back_from_outline"):
             st.session_state.step = 'configuration'
             st.rerun()
+    
     with col2:
-        if st.button("🔄 Regenerate", key="regen_outline"):
-            del st.session_state.outline
+        if st.button("🔄 Regenerate", use_container_width=True, key="regen_outline_btn"):
+            # Clear outline and regenerate with AI
+            st.session_state.outline = None
             st.rerun()
+    
     with col3:
-        if st.button("✅ Approve", type="primary", key="approve_outline"):
-            # Convert edited back to outline
+        if st.button("✅ Approve & Generate Content", type="primary", use_container_width=True, key="approve_outline_btn"):
+            # Convert edited dataframe back to outline
             approved = []
             current = None
             
@@ -807,6 +880,136 @@ def show_outline_page():
             st.session_state.approved_outline = approved
             st.session_state.step = 'content_generation'
             st.rerun()
+
+def generate_outline_with_ai():
+    """Generate outline using AI - NO DEFAULTS"""
+    
+    num_units = st.session_state.get('num_units', 4)
+    sections_per_unit = st.session_state.get('sections_per_unit', 8)
+    
+    st.write(f"🎯 Generating {num_units} units with {sections_per_unit} sections each...")
+    
+    # Build PO/CO/PSO context
+    outcomes_context = ""
+    if st.session_state.program_objectives:
+        outcomes_context += f"\n**Program Objectives:** {st.session_state.program_objectives}"
+    if st.session_state.program_outcomes:
+        outcomes_context += f"\n**Program Outcomes:** {st.session_state.program_outcomes}"
+    if st.session_state.course_outcomes:
+        outcomes_context += f"\n**Course Outcomes:** {st.session_state.course_outcomes}"
+    if st.session_state.specialized_outcomes:
+        outcomes_context += f"\n**Specialized Outcomes:** {st.session_state.specialized_outcomes}"
+    
+    system_prompt = """You are an expert curriculum designer with deep knowledge of educational standards and course design.
+
+Create a comprehensive, well-structured course outline that follows academic best practices.
+
+CRITICAL: Output ONLY valid JSON in this EXACT format:
+[
+  {
+    "unit_number": 1,
+    "unit_title": "Descriptive, Engaging Unit Title",
+    "sections": [
+      {
+        "section_number": "1.1",
+        "section_title": "Clear Section Title",
+        "description": "Detailed 2-3 sentence description of what this section covers, including key concepts and learning goals"
+      }
+    ]
+  }
+]
+
+REQUIREMENTS:
+- Create academically rigorous, engaging titles
+- Make descriptions detailed and specific (not generic)
+- Ensure logical progression and flow between topics
+- Cover the subject comprehensively
+- Use proper academic terminology
+- Build complexity progressively from foundational to advanced
+- Ensure each description is at least 2-3 sentences explaining WHAT will be covered"""
+
+    user_prompt = f"""Create a comprehensive course outline for:
+
+**Course Title:** {st.session_state.course_title}
+**Course Code:** {st.session_state.course_code}
+**Target Audience:** {st.session_state.target_audience}
+**Credits:** {st.session_state.credits}
+
+{outcomes_context}
+
+**STRUCTURE REQUIREMENTS:**
+- Generate EXACTLY {num_units} units
+- Each unit must have EXACTLY {sections_per_unit} sections
+- Section numbering: 1.1 to 1.{sections_per_unit}, 2.1 to 2.{sections_per_unit}, etc.
+- Total sections must be: {num_units * sections_per_unit}
+
+**CONTENT REQUIREMENTS:**
+- Make unit titles specific to {st.session_state.course_title}
+- Create logical flow from basics to advanced concepts
+- Ensure comprehensive coverage of the subject
+- Make descriptions specific and detailed (NOT generic like "First topic", "Overview")
+- Each description should explain WHAT concepts/theories/applications will be covered
+
+Return ONLY the JSON array. No additional text, no markdown code blocks, just pure JSON."""
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+    
+    with st.expander("🔍 AI Outline Generation Details", expanded=True):
+        outline_str = make_api_call(messages, max_tokens=3000, retries=3)
+    
+    if outline_str:
+        try:
+            # Clean response
+            outline_str = outline_str.strip()
+            
+            # Remove markdown code blocks if present
+            json_match = re.search(r'```(?:json)?\s*\n(.*?)\n```', outline_str, re.DOTALL)
+            if json_match:
+                outline_str = json_match.group(1)
+            
+            # Remove any leading/trailing whitespace
+            outline_str = outline_str.strip()
+            
+            # Parse JSON
+            parsed_outline = json.loads(outline_str)
+            
+            if isinstance(parsed_outline, list) and len(parsed_outline) > 0:
+                actual_units = len(parsed_outline)
+                actual_sections = sum(len(u.get('sections', [])) for u in parsed_outline)
+                
+                st.success(f"✅ AI generated {actual_units} units with {actual_sections} sections!")
+                
+                # Verify structure
+                if actual_units != num_units:
+                    st.warning(f"⚠️ Expected {num_units} units, got {actual_units}")
+                
+                if actual_sections < (num_units * sections_per_unit * 0.8):
+                    st.warning(f"⚠️ Expected ~{num_units * sections_per_unit} sections, got {actual_sections}")
+                
+                # Show preview
+                with st.expander("📋 Preview Generated Outline", expanded=False):
+                    for unit in parsed_outline[:2]:  # Show first 2 units
+                        st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
+                        for section in unit.get('sections', [])[:3]:
+                            st.write(f"  - {section['section_number']} {section['section_title']}")
+                
+                return parsed_outline
+            else:
+                st.error("❌ Invalid outline format - not a valid list")
+                return None
+                
+        except json.JSONDecodeError as e:
+            st.error(f"❌ JSON parsing failed: {str(e)}")
+            st.write("**Raw AI Response:**")
+            st.code(outline_str[:1000], language="json")
+            st.error("💡 Try regenerating or check API response format")
+            return None
+    
+    st.error("❌ AI did not return any content")
+    return None
 
 def show_content_generation_page():
     """Content generation page"""
