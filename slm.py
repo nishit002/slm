@@ -855,23 +855,36 @@ def show_outline_page():
     
     with col3:
         if st.button("✅ Approve & Generate Content", type="primary", use_container_width=True, key="approve_outline_btn"):
-            # Convert edited dataframe back to outline
+            # Convert edited data back to outline format
+            # edited is a dict/list, not DataFrame
             approved = []
             current = None
             
-            for _, row in edited.iterrows():
-                if current is None or current['unit_number'] != row['Unit']:
+            # Handle both list and dict formats
+            if isinstance(edited, dict):
+                edited = edited.get('data', edited)
+            
+            for row in edited:
+                # Handle dict row
+                unit_num = row.get('Unit') if isinstance(row, dict) else row['Unit']
+                unit_title = row.get('Unit Title') if isinstance(row, dict) else row['Unit Title']
+                section_num = row.get('Section') if isinstance(row, dict) else row['Section']
+                section_title = row.get('Section Title') if isinstance(row, dict) else row['Section Title']
+                description = row.get('Description') if isinstance(row, dict) else row['Description']
+                
+                if current is None or current['unit_number'] != unit_num:
                     if current:
                         approved.append(current)
                     current = {
-                        'unit_number': row['Unit'],
-                        'unit_title': row['Unit Title'],
+                        'unit_number': unit_num,
+                        'unit_title': unit_title,
                         'sections': []
                     }
+                
                 current['sections'].append({
-                    'section_number': row['Section'],
-                    'section_title': row['Section Title'],
-                    'description': row['Description']
+                    'section_number': section_num,
+                    'section_title': section_title,
+                    'description': description
                 })
             
             if current:
