@@ -4,6 +4,7 @@ COMPLETE AI CURRICULUM GENERATOR - SYNTAX FIXED & ENHANCED
 All features integrated with proper syntax
 Enhancements: Fixed page estimation, added image upload per section, better PDF formatting with bold/italics,
 document heading/logo (header), fixed Drive uploads, options for separate/combined outputs, DOCX for editable Google Docs
+Fixed: Table.copy() error, better Drive error handling
 """
 
 import streamlit as st
@@ -86,7 +87,6 @@ def initialize_session_state():
         'credits': 3,
         'target_audience': 'Postgraduate (MBA)',
         'num_units': 4,
-        'sections_per_unit': 8,
         'sections_per_unit': 8,
         'program_objectives': '',
         'program_outcomes': '',
@@ -410,6 +410,12 @@ def add_header_footer(doc, canvas, course_info, logo=None):
     
     canvas.restoreState()
 
+def create_line_table():
+    """Create line table for decoration"""
+    line_table = Table([['']], colWidths=[6.5*inch])
+    line_table.setStyle(TableStyle([('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4'))]))
+    return line_table
+
 def compile_unit_pdf(unit_data, course_info, content_dict):
     """Compile unit PDF with enhanced formatting"""
     if not REPORTLAB_AVAILABLE:
@@ -458,9 +464,7 @@ def compile_unit_pdf(unit_data, course_info, content_dict):
     story.append(Spacer(1, 0.5*inch))
     
     # Decorative line
-    line_table = Table([['']], colWidths=[6.5*inch])
-    line_table.setStyle(TableStyle([('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor('#1f77b4'))]))
-    story.append(line_table)
+    story.append(create_line_table())
     story.append(Spacer(1, 0.3*inch))
     
     story.append(Paragraph(course_info.get('course_title', ''), styles['Heading3']))
@@ -472,7 +476,7 @@ def compile_unit_pdf(unit_data, course_info, content_dict):
     for section in unit_data.get('sections', []):
         sec_key = f"{section['section_number']} {section['section_title']}"
         story.append(Paragraph(f"<b>{sec_key}</b>", section_style))
-        story.append(line_table.copy())  # Line under section
+        story.append(create_line_table())  # Line under section
         story.append(Spacer(1, 0.2*inch))
         
         content = content_dict.get(sec_key, "[Not generated]")
@@ -1467,7 +1471,11 @@ def show_compilation_page():
                     if gdrive_folder_id:
                         st.success(f"✅ Folder: {folder_name}")
                     else:
-                        st.error("❌ Folder creation failed")
+                        st.error("❌ Folder creation failed - continuing without upload")
+                        upload_drive = False
+                else:
+                    st.error("❌ Drive connection failed - continuing without upload")
+                    upload_drive = False
         
         # Compile
         compiled_files = {}
@@ -1501,6 +1509,8 @@ def show_compilation_page():
                             if link:
                                 drive_links[f"Unit_{unit['unit_number']}"] = link
                                 st.success(f"📤 Uploaded to Drive")
+                            else:
+                                st.warning("⚠️ Upload failed for this file")
                 
                 progress_bar.progress((i + 1) / len(st.session_state.approved_outline))
         
@@ -1527,6 +1537,8 @@ def show_compilation_page():
                         if link:
                             drive_links['Complete'] = link
                             st.success("📤 Complete file uploaded to Drive")
+                        else:
+                            st.warning("⚠️ Upload failed for complete file")
         
         st.success("🎉 Compilation Complete!")
         st.divider()
