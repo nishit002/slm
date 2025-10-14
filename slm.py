@@ -2600,12 +2600,12 @@ To use this application, you need to combine all 4 phase files:
 5. This file: Main Application
 
 Features:
-✅ Fixed LaTeX equation rendering
-✅ Automatic timestamped Google Drive subfolders
-✅ Image upload for each section
-✅ AI-powered image prompt generation
-✅ Complete PDF/DOCX compilation
-✅ Enhanced error handling
+Fixed LaTeX equation rendering
+Automatic timestamped Google Drive subfolders
+Image upload for each section
+AI-powered image prompt generation
+Complete PDF/DOCX compilation
+Enhanced error handling
 """
 
 # ============================================================================
