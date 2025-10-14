@@ -494,8 +494,14 @@ def setup_google_drive_connection():
         return None
         
     try:
+        # Create a copy of credentials and ensure private key has proper newlines
+        creds_dict = GDRIVE_CREDENTIALS.copy()
+        # Replace any escaped newlines with actual newlines
+        if 'private_key' in creds_dict:
+            creds_dict['private_key'] = creds_dict['private_key'].replace('\\n', '\n')
+        
         credentials = service_account.Credentials.from_service_account_info(
-            GDRIVE_CREDENTIALS,
+            creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.file']
         )
         service = build('drive', 'v3', credentials=credentials)
@@ -1019,7 +1025,7 @@ def add_header_footer(canvas, doc, course_info, logo=None):
     # Footer - Page number and date
     canvas.setFont("Helvetica", 9)
     page_text = f"Page {doc.page}"
-    canvas.drawString(doc.width / 2 + 20, 40, page_text)
+    canvas.drawString(72, 40, page_text)
     
     date_text = f"Generated: {datetime.now().strftime('%Y-%m-%d')}"
     canvas.drawString(72, 40, date_text)
