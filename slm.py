@@ -2802,7 +2802,7 @@ Common Issues and Solutions:
 
 1. **LaTeX equations not rendering:**
    - Fixed! Now converts LaTeX to Unicode symbols
-   - Example: \leq becomes ≤
+   - Example: \\leq becomes ≤
 
 2. **Google Drive permission error:**
    - Share folder with service account email
