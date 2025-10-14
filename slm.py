@@ -97,7 +97,7 @@ def get_api_headers():
     }
 
 def make_api_call(messages, retries=3, timeout=120, max_tokens=3000):
-    """Make API call"""
+    """Make API call with detailed logging"""
     headers = get_api_headers()
     
     payload = {
@@ -110,18 +110,95 @@ def make_api_call(messages, retries=3, timeout=120, max_tokens=3000):
     
     for attempt in range(retries):
         try:
+            st.write(f"🔄 API Call Attempt {attempt + 1}/{retries}")
+            st.write(f"📤 Sending to: {API_URL}")
+            st.write(f"🎯 Model: grok-2-1212")
+            st.write(f"📊 Max tokens: {max_tokens}")
+            
+            # Show first 200 chars of prompt
+            if messages:
+                prompt_preview = messages[-1].get('content', '')[:200]
+                st.write(f"📝 Prompt preview: {prompt_preview}...")
+            
             response = requests.post(API_URL, headers=headers, json=payload, timeout=timeout)
+            
+            st.write(f"📡 Response Status: {response.status_code}")
+            
+            # Show response headers
+            if response.headers:
+                st.write(f"⏱️ Response time: {response.elapsed.total_seconds():.2f}s")
+            
             response.raise_for_status()
             result = response.json()
             
+            # Detailed response analysis
             if 'choices' in result and len(result['choices']) > 0:
-                return result['choices'][0]['message']['content']
+                content = result['choices'][0]['message']['content']
+                
+                # Analyze response
+                word_count = len(content.split())
+                char_count = len(content)
+                has_structure = any(keyword in content.upper() for keyword in ['INTRODUCTION', 'LEARNING OBJECTIVES', 'CHECK YOUR PROGRESS'])
+                has_blooms = any(keyword in content.upper() for keyword in ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYZE', 'EVALUATE', 'CREATE'])
+                
+                st.write("✅ **API Response Analysis:**")
+                st.write(f"   📊 Words: {word_count:,}")
+                st.write(f"   📝 Characters: {char_count:,}")
+                st.write(f"   📚 Has Structure: {'✅' if has_structure else '❌'}")
+                st.write(f"   🎯 Has Bloom's Taxonomy: {'✅' if has_blooms else '❌'}")
+                
+                if word_count < 1000:
+                    st.warning(f"⚠️ Response seems short ({word_count} words). Expected 8,000+")
+                    st.write("🔍 First 500 characters of response:")
+                    st.code(content[:500])
+                elif word_count < 5000:
+                    st.warning(f"⚠️ Response shorter than expected ({word_count} words). Expected 8,000+")
+                else:
+                    st.success(f"✅ Good response length: {word_count:,} words")
+                
+                return content
+            else:
+                st.error(f"❌ Unexpected response format")
+                st.json(result)
+                
+        except requests.exceptions.HTTPError as e:
+            st.error(f"❌ HTTP Error {e.response.status_code}")
+            try:
+                error_detail = e.response.json()
+                st.json(error_detail)
+            except:
+                st.error(e.response.text[:500])
+            
+            if e.response.status_code == 401:
+                st.error("🔑 Invalid API Key - Check your configuration")
+                return None
+            elif e.response.status_code == 429:
+                st.warning("⏳ Rate limited - waiting before retry...")
+                time.sleep(10)
+            else:
+                if attempt < retries - 1:
+                    st.warning(f"⏳ Retrying in 3 seconds...")
+                    time.sleep(3)
+                    
+        except requests.exceptions.Timeout:
+            st.error(f"⏱️ Request timeout after {timeout}s")
+            if attempt < retries - 1:
+                st.warning("⏳ Retrying with longer timeout...")
+                timeout += 30
+                time.sleep(2)
+                
+        except requests.exceptions.ConnectionError as e:
+            st.error(f"🔌 Connection error: {str(e)}")
+            if attempt < retries - 1:
+                st.warning("⏳ Retrying connection...")
+                time.sleep(3)
+                
         except Exception as e:
+            st.error(f"❌ Unexpected error: {type(e).__name__}: {str(e)}")
             if attempt < retries - 1:
                 time.sleep(2)
-            else:
-                st.error(f"API Error: {str(e)}")
     
+    st.error("❌ All API attempts failed - check logs above for details")
     return None
 
 def extract_pdf_text(pdf_file):
@@ -464,9 +541,62 @@ def show_configuration_page():
     st.header("⚙️ Step 2: Configuration")
     
     # API
-    st.subheader("API")
-    api_key = st.text_input("API Key", value=st.session_state.api_key, type="password", key="api_key_input")
-    st.session_state.api_key = api_key
+    st.subheader("🔑 API Configuration")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        api_key = st.text_input(
+            "Grok API Key",
+            value=st.session_state.api_key,
+            type="password",
+            key="api_key_input",
+            help="Your Grok API key from x.ai"
+        )
+        st.session_state.api_key = api_key
+        
+        if api_key and api_key.startswith('xai-'):
+            st.success("✅ Valid API key format")
+        else:
+            st.warning("⚠️ API key should start with 'xai-'")
+    
+    with col2:
+        st.write("")  # Spacing
+        st.write("")  # Spacing
+        if st.button("🧪 Test API", use_container_width=True, key="test_api_btn"):
+            with st.expander("🔍 API Test Results", expanded=True):
+                st.info("Testing API connection and response quality...")
+                
+                test_messages = [
+                    {"role": "system", "content": "You are a helpful academic content generator."},
+                    {"role": "user", "content": "Write a 200-word introduction about Organizational Behaviour. Include: definition, importance, and key concepts. Use academic tone."}
+                ]
+                
+                test_response = make_api_call(test_messages, max_tokens=500)
+                
+                if test_response:
+                    st.success("✅ API is working!")
+                    st.write("**Response Preview:**")
+                    st.write(test_response[:300] + "...")
+                    
+                    # Quality checks
+                    word_count = len(test_response.split())
+                    if word_count >= 150:
+                        st.success(f"✅ Good response length: {word_count} words")
+                    else:
+                        st.warning(f"⚠️ Response seems short: {word_count} words")
+                    
+                    if len(test_response) > 100:
+                        st.success("✅ API returning substantial content")
+                        st.info("💡 Your API is ready for curriculum generation!")
+                    else:
+                        st.error("❌ API response too short - check configuration")
+                else:
+                    st.error("❌ API test failed - check logs above for details")
+                    st.error("🔍 Common issues:")
+                    st.error("   - Invalid API key")
+                    st.error("   - Rate limiting")
+                    st.error("   - Network connection")
+                    st.error("   - API service down")
     
     # Course details
     st.subheader("Course Details")
@@ -490,22 +620,70 @@ def show_configuration_page():
         st.session_state.target_audience = audience
     
     # Academic mappings
-    st.subheader("Academic Mappings")
+    st.subheader("🎯 Academic Mappings (Optional)")
+    st.info("💡 These mappings enhance content quality and alignment. Leave blank if not needed.")
     
-    peo = st.text_area("PEO", value=st.session_state.program_objectives, key="peo_input")
+    with st.expander("ℹ️ What are PEO, PO, CO, PSO?", expanded=False):
+        st.markdown("""
+        **Program Educational Objectives (PEO):** What students can do after completing the entire program
+        
+        **Program Outcomes (PO):** Skills and knowledge students gain from the program
+        - Example: PO1: Critical thinking, PO2: Communication skills, PO3: Ethical awareness
+        
+        **Course Learning Objectives/Outcomes (CLO/CO):** What students learn in THIS specific course
+        - Example: CO1: Understand OB concepts [Bloom: Understand], CO2: Apply leadership theories [Bloom: Apply]
+        
+        **Specialized Program Outcomes (PSO):** Specialized skills specific to the program (e.g., MBA-specific)
+        - Example: PSO1: Strategic management, PSO2: Business analytics
+        """)
+    
+    peo = st.text_area(
+        "Program Educational Objectives (PEO)",
+        value=st.session_state.program_objectives,
+        placeholder="Example:\n- Develop strategic leadership capabilities\n- Foster analytical decision-making skills\n- Build effective communication abilities\n\n(Leave blank if not required)",
+        help="What students should achieve after completing the program",
+        key="peo_input",
+        height=120
+    )
     st.session_state.program_objectives = peo
     
     col1, col2 = st.columns(2)
     with col1:
-        po = st.text_area("PO", value=st.session_state.program_outcomes, key="po_input")
+        po = st.text_area(
+            "Program Outcomes (PO)",
+            value=st.session_state.program_outcomes,
+            placeholder="Example:\nPO1: Critical thinking and problem-solving\nPO2: Effective communication\nPO3: Ethical decision-making\nPO4: Teamwork and collaboration\n\n(Leave blank if not required)",
+            help="Skills and knowledge from the program",
+            key="po_input",
+            height=150
+        )
         st.session_state.program_outcomes = po
     
     with col2:
-        pso = st.text_area("PSO", value=st.session_state.specialized_outcomes, key="pso_input")
+        pso = st.text_area(
+            "Specialized Program Outcomes (PSO)",
+            value=st.session_state.specialized_outcomes,
+            placeholder="Example:\nPSO1: Advanced managerial skills\nPSO2: Strategic HR management\nPSO3: Organizational leadership\nPSO4: Change management expertise\n\n(Leave blank if not required)",
+            help="Specialized skills for this specific program",
+            key="pso_input",
+            height=150
+        )
         st.session_state.specialized_outcomes = pso
     
-    co = st.text_area("CO", value=st.session_state.course_outcomes, key="co_input")
+    co = st.text_area(
+        "Course Learning Objectives & Outcomes (CLO/CO)",
+        value=st.session_state.course_outcomes,
+        placeholder="Example:\nCO1: Understand key organizational behaviour concepts [Bloom: Understand]\nCO2: Apply OB theories to real-world scenarios [Bloom: Apply]\nCO3: Analyze organizational dynamics and culture [Bloom: Analyze]\nCO4: Evaluate organizational strategies and interventions [Bloom: Evaluate]\n\n(Leave blank if not required)",
+        help="What students will learn in THIS specific course",
+        key="co_input",
+        height=150
+    )
     st.session_state.course_outcomes = co
+    
+    if peo or po or co or pso:
+        st.success("✅ Academic mappings will be integrated into content generation")
+    else:
+        st.info("ℹ️ Content will be generated with general academic outcomes")
     
     # Google Drive
     st.subheader("Google Drive")
