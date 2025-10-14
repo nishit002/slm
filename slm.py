@@ -755,7 +755,7 @@ Generate comprehensive content following eGyankosh standards:
 
 STRUCTURE (MUST INCLUDE ALL):
 1. Introduction (2-3 paragraphs introducing the topic)
-2. Learning Objectives (5-7 objectives mapped to Bloom's Taxonomy: Remember, Understand, Apply, Analyze, Evaluate, Create)
+2. Learning Objectives (5-7 objectives mapped to Blooms Taxonomy: Remember, Understand, Apply, Analyze, Evaluate, Create)
 3. Detailed Content (Main body with subsections, definitions, explanations)
 4. Examples & Case Studies (Practical real-world examples)
 5. CHECK YOUR PROGRESS (5-7 questions for self-assessment)
