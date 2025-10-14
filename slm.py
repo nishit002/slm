@@ -494,28 +494,17 @@ def setup_google_drive_connection():
         return None
         
     try:
-        # Create a copy of credentials
-        creds_dict = GDRIVE_CREDENTIALS.copy()
-        
-        # Ensure the private key is properly formatted
-        # The private key needs actual newline characters, not escaped ones
-        if 'private_key' in creds_dict:
-            private_key = creds_dict['private_key']
-            # If the key doesn't have actual newlines, it might have literal \n strings
-            # Replace literal \n with actual newlines if needed
-            if '\\n' in private_key:
-                private_key = private_key.replace('\\n', '\n')
-            # Ensure the key starts and ends correctly
-            if not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-                st.error("Invalid private key format")
-                return None
-            creds_dict['private_key'] = private_key
+        # Convert credentials dict to JSON string and back to ensure proper parsing
+        # This handles the private key newlines correctly
+        import json
+        creds_json = json.dumps(GDRIVE_CREDENTIALS)
+        creds_dict = json.loads(creds_json)
         
         credentials = service_account.Credentials.from_service_account_info(
             creds_dict,
             scopes=[
-                'https://www.googleapis.com/auth/drive.file',
-                'https://www.googleapis.com/auth/drive'
+                'https://www.googleapis.com/auth/drive',
+                'https://www.googleapis.com/auth/drive.file'
             ]
         )
         service = build('drive', 'v3', credentials=credentials)
