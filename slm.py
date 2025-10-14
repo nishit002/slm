@@ -2680,9 +2680,6 @@ def main():
         - python-docx (DOCX generation)
         - Google Drive API
         - Streamlit
-        
-        **Version:** 2.0 (Complete with all fixes)
-        **Last Updated:** 2025-01-14
         """)
 
 # ============================================================================
