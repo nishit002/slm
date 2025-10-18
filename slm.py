@@ -69,39 +69,18 @@ API_URL = "https://api.x.ai/v1/chat/completions"
 # ============================================================================
 
 def initialize_session_state():
-    """Initialize all session state variables"""
+    """Initialize all session state variables with defaults"""
     defaults = {
-        # API
-        'api_key': DEFAULT_API_KEY,
+        # API Configuration
+        'api_key': '',
+        'api_configured': False,
         
-        # Navigation
-        'step': 'configuration',
-        
-        # Course Info
-        'course_title': '',
+        # Course Configuration
         'course_code': '',
+        'course_title': '',
         'credits': 3,
-        'target_audience': '',
-        'learning_objectives': '',
-        'prerequisites': '',
-        'assessment_methods': '',
-        
-        # Program/Course Outcomes
-        'program_objectives': '',
-        'program_outcomes': '',
-        'course_outcomes': '',
-        'specialized_outcomes': '',
-
-        # Document Customization
-        'document_heading': '',
-        'logo': None,
-        
-        # PDF Upload
-        'uploaded_pdf_text': '',
-        'pdf_processed': False,
+        'syllabus_text': '',
         'extracted_structure': None,
-        
-        # Outline
         'raw_outline': '',
         'approved_outline': [],
         'outline_generated': False,
@@ -109,7 +88,7 @@ def initialize_session_state():
         # Content Generation
         'content': {},
         'content_status': {},
-        'images': {},
+        'images': {},  # Now stores {section_key: [{'image': file, 'prompt': str, 'figure_num': int}]}
         'image_prompts': {},
         'sections_to_process': [],
         'paused': False,
@@ -124,6 +103,21 @@ def initialize_session_state():
         'upload_choice': 'Upload Syllabus PDF',
         'num_units': 4,
         'sections_per_unit': 8,
+        
+        # Additional fields from Configuration page
+        'target_audience': 'Undergraduate',
+        'learning_objectives': '',
+        'prerequisites': '',
+        'assessment_methods': '',
+        'program_objectives': '',
+        'program_outcomes': '',
+        'course_outcomes': '',
+        'specialized_outcomes': '',
+        'logo': None,
+        'document_heading': '',
+        
+        # Step tracking
+        'step': 'syllabus_upload', # Default to first step
     }
     
     for key, value in defaults.items():
@@ -240,6 +234,7 @@ def make_api_call(messages, retries=3, timeout=120, max_tokens=2000):
             
             if e.response.status_code == 401:
                 st.error("🔑 Invalid API Key - Check your configuration")
+                st.session_state.api_configured = False # Mark API as not configured
                 return None
             elif e.response.status_code == 429:
                 st.warning("⏳ Rate limited - waiting before retry...")
@@ -296,8 +291,8 @@ def extract_pdf_text(pdf_file):
             page_text = page.extract_text()
             text += page_text + "\n"
             
-        st.session_state.uploaded_pdf_text = text
-        st.session_state.pdf_processed = True
+        st.session_state.syllabus_text = text # Store syllabus text in session state
+        st.session_state.pdf_processed = True # Legacy flag, can be removed
         st.success(f"✅ Extracted {len(text)} characters from {len(pdf_reader.pages)} pages")
         return text
         
@@ -886,47 +881,57 @@ def compile_unit_pdf(unit_data, course_info, content_dict):
             story.append(create_decorative_line())
         story.append(Spacer(1, 0.2*inch))
         
+        # Add images if available
         # Add image if available
-        image_data = st.session_state.images.get(sec_key)
-        if image_data:
-            try:
-                image_data.seek(0)
-                img_bytes = image_data.read()
-                img_buffer = BytesIO(img_bytes)
-                
-                # Add image to PDF
-                # Attempt to get image dimensions for better scaling
+        images_list = st.session_state.images.get(sec_key, [])
+        if images_list:
+            for img_data in images_list:
                 try:
-                    img_pil = PilImage.open(img_buffer)
-                    img_width, img_height = img_pil.size
-                    aspect_ratio = img_height / img_width
-                    max_width = 4 * inch
-                    max_height = 2.5 * inch
+                    image_file = img_data['image']
+                    figure_num = img_data['figure_num']
+                    prompt = img_data.get('prompt', '')
                     
-                    if img_width > max_width:
-                        draw_width = max_width
-                        draw_height = max_width * aspect_ratio
-                        if draw_height > max_height:
-                            draw_height = max_height
-                            draw_width = max_height / aspect_ratio
+                    image_file.seek(0)
+                    img_bytes = image_file.read()
+                    img_buffer = BytesIO(img_bytes)
+                    
+                    # Add image to PDF
+                    try:
+                        img_pil = PilImage.open(img_buffer)
+                        img_width, img_height = img_pil.size
+                        aspect_ratio = img_height / img_width
+                        max_width = 4 * inch
+                        max_height = 2.5 * inch
+                        
+                        if img_width > max_width:
+                            draw_width = max_width
+                            draw_height = max_width * aspect_ratio
+                            if draw_height > max_height:
+                                draw_height = max_height
+                                draw_width = max_height / aspect_ratio
+                        else:
+                            draw_width = img_width
+                            draw_height = img_height
+                            if draw_height > max_height:
+                                draw_height = max_height
+                                draw_width = max_height / aspect_ratio
 
-                    else:
-                        draw_width = img_width
-                        draw_height = img_height
-                        if draw_height > max_height:
-                            draw_height = max_height
-                            draw_width = max_height / aspect_ratio
-
-                except Exception as pil_err:
-                    st.warning(f"PIL error for {sec_key}: {pil_err}. Using default image size.")
-                    draw_width = 4 * inch
-                    draw_height = 2.5 * inch
-                
-                img_buffer.seek(0) # Reset buffer after reading with PIL
-                story.append(Image(img_buffer, width=draw_width, height=draw_height))
-                story.append(Spacer(1, 0.2*inch))
-            except Exception as e:
-                st.warning(f"⚠️ Could not add image for {sec_key}: {str(e)}")
+                    except Exception as pil_err:
+                        st.warning(f"PIL error for {sec_key}: {pil_err}. Using default image size.")
+                        draw_width = 4 * inch
+                        draw_height = 2.5 * inch
+                    
+                    img_buffer.seek(0)
+                    story.append(Image(img_buffer, width=draw_width, height=draw_height))
+                    
+                    # Add caption with figure number
+                    caption_text = f"Figure {figure_num}"
+                    if prompt:
+                        caption_text += f": {prompt[:100]}..."  # Truncate long prompts
+                    story.append(Paragraph(caption_text, styles['Italic']))
+                    story.append(Spacer(1, 0.2*inch))
+                except Exception as e:
+                    st.warning(f"⚠️ Could not add image {figure_num} for {sec_key}: {str(e)}")
         
         # Content
         content = content_dict.get(sec_key, "[Content not generated]")
@@ -1061,44 +1066,57 @@ def compile_complete_pdf(outline, course_info, content_dict):
             sec_key = f"{section['section_number']} {section['section_title']}"
             story.append(Paragraph(sec_key, styles['Heading2']))
             
+            # Add image
             # Add image if available
-            image_data = st.session_state.images.get(sec_key)
-            if image_data:
-                try:
-                    image_data.seek(0)
-                    img_bytes = image_data.read()
-                    img_buffer = BytesIO(img_bytes)
-                    
+            images_list = st.session_state.images.get(sec_key, [])
+            if images_list:
+                for img_data in images_list:
                     try:
-                        img_pil = PilImage.open(img_buffer)
-                        img_width, img_height = img_pil.size
-                        aspect_ratio = img_height / img_width
-                        max_width = 4 * inch
-                        max_height = 2.5 * inch
+                        image_file = img_data['image']
+                        figure_num = img_data['figure_num']
+                        prompt = img_data.get('prompt', '')
                         
-                        if img_width > max_width:
-                            draw_width = max_width
-                            draw_height = max_width * aspect_ratio
-                            if draw_height > max_height:
-                                draw_height = max_height
-                                draw_width = max_height / aspect_ratio
-                        else:
-                            draw_width = img_width
-                            draw_height = img_height
-                            if draw_height > max_height:
-                                draw_height = max_height
-                                draw_width = max_height / aspect_ratio
+                        image_file.seek(0)
+                        img_bytes = image_file.read()
+                        img_buffer = BytesIO(img_bytes)
+                        
+                        # Add image to PDF
+                        try:
+                            img_pil = PilImage.open(img_buffer)
+                            img_width, img_height = img_pil.size
+                            aspect_ratio = img_height / img_width
+                            max_width = 4 * inch
+                            max_height = 2.5 * inch
+                            
+                            if img_width > max_width:
+                                draw_width = max_width
+                                draw_height = max_width * aspect_ratio
+                                if draw_height > max_height:
+                                    draw_height = max_height
+                                    draw_width = max_height / aspect_ratio
+                            else:
+                                draw_width = img_width
+                                draw_height = img_height
+                                if draw_height > max_height:
+                                    draw_height = max_height
+                                    draw_width = max_height / aspect_ratio
 
-                    except Exception as pil_err:
-                        st.warning(f"PIL error for {sec_key}: {pil_err}. Using default image size.")
-                        draw_width = 4 * inch
-                        draw_height = 2.5 * inch
-                    
-                    img_buffer.seek(0)
-                    story.append(Image(img_buffer, width=draw_width, height=draw_height))
-                    story.append(Spacer(1, 0.2*inch))
-                except:
-                    st.warning(f"Could not add image to complete PDF for {sec_key}")
+                        except Exception as pil_err:
+                            st.warning(f"PIL error for {sec_key}: {pil_err}. Using default image size.")
+                            draw_width = 4 * inch
+                            draw_height = 2.5 * inch
+                        
+                        img_buffer.seek(0)
+                        story.append(Image(img_buffer, width=draw_width, height=draw_height))
+                        
+                        # Add caption with figure number
+                        caption_text = f"Figure {figure_num}"
+                        if prompt:
+                            caption_text += f": {prompt[:100]}..."  # Truncate long prompts
+                        story.append(Paragraph(caption_text, styles['Italic']))
+                        story.append(Spacer(1, 0.2*inch))
+                    except Exception as e:
+                        st.warning(f"⚠️ Could not add image {figure_num} to complete PDF for {sec_key}: {str(e)}")
             
             content = content_dict.get(sec_key, "[Not generated]")
             clean_content = clean_text_for_pdf(content)
@@ -1241,38 +1259,56 @@ def compile_unit_docx(unit_data, course_info, content_dict):
         # Section heading
         doc.add_heading(sec_key, level=1)
         
+        # Add image
         # Add image if available
-        image_data = st.session_state.images.get(sec_key)
-        if image_data:
-            try:
-                image_data.seek(0)
-                # Attempt to get image dimensions for better scaling
+        images_list = st.session_state.images.get(sec_key, [])
+        if images_list:
+            for img_data in images_list:
                 try:
-                    img_pil = PilImage.open(BytesIO(image_data.read()))
-                    img_width, img_height = img_pil.size
-                    aspect_ratio = img_height / img_width
-                    max_width = 4.5 # Inches
+                    image_file = img_data['image']
+                    figure_num = img_data['figure_num']
+                    prompt = img_data.get('prompt', '')
                     
-                    if img_width > max_width * 72: # DPI
-                        draw_width = Inches(max_width)
-                        draw_height = draw_width * aspect_ratio
-                    else:
-                        draw_width = Inches(img_width / 72) # Convert pixels to inches
-                        draw_height = Inches(img_height / 72)
-                        if draw_height > Inches(3.0): # Limit height
-                            draw_height = Inches(3.0)
-                            draw_width = draw_height / aspect_ratio
+                    image_file.seek(0)
+                    # Attempt to get image dimensions for better scaling
+                    try:
+                        img_pil = PilImage.open(BytesIO(image_file.read()))
+                        img_width, img_height = img_pil.size
+                        aspect_ratio = img_height / img_width
+                        max_width = 4.5 # Inches
+                        
+                        if img_width > max_width * 72: # DPI
+                            draw_width = Inches(max_width)
+                            draw_height = draw_width * aspect_ratio
+                            if draw_height > Inches(3.0): # Limit height
+                                draw_height = Inches(3.0)
+                                draw_width = draw_height / aspect_ratio
+                        else:
+                            draw_width = Inches(img_width / 72) # Convert pixels to inches
+                            draw_height = Inches(img_height / 72)
+                            if draw_height > Inches(3.0): # Limit height
+                                draw_height = Inches(3.0)
+                                draw_width = draw_height / aspect_ratio
 
-                except Exception as pil_err:
-                    st.warning(f"PIL error for DOCX image {sec_key}: {pil_err}. Using default image size.")
-                    draw_width = Inches(4.5)
-                    draw_height = Inches(3.0)
-                
-                image_data.seek(0) # Reset buffer
-                doc.add_picture(image_data, width=draw_width)
-                doc.add_paragraph()  # Space after image
-            except Exception as e:
-                st.warning(f"⚠️ Could not add image to DOCX: {str(e)}")
+                    except Exception as pil_err:
+                        st.warning(f"PIL error for DOCX image {sec_key}: {pil_err}. Using default image size.")
+                        draw_width = Inches(4.5)
+                        draw_height = Inches(3.0)
+                    
+                    image_file.seek(0) # Reset buffer
+                    doc.add_picture(image_file, width=draw_width)
+                    
+                    # Add caption
+                    caption_text = f"Figure {figure_num}"
+                    if prompt:
+                        caption_text += f": {prompt[:100]}..."
+                    p_caption = doc.add_paragraph(caption_text)
+                    p_caption.italic = True
+                    p_caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+                    doc.add_paragraph()  # Space after image
+                except Exception as e:
+                    st.warning(f"⚠️ Could not add image {figure_num} to DOCX: {str(e)}")
         
         # Add content
         content = content_dict.get(sec_key, "[Not generated]")
@@ -1370,36 +1406,54 @@ def compile_complete_docx(outline, course_info, content_dict):
             doc.add_heading(sec_key, level=2)
             
             # Add image
-            image_data = st.session_state.images.get(sec_key)
-            if image_data:
-                try:
-                    image_data.seek(0)
-                    # Attempt to get image dimensions for better scaling
+            # Add image if available
+            images_list = st.session_state.images.get(sec_key, [])
+            if images_list:
+                for img_data in images_list:
                     try:
-                        img_pil = PilImage.open(BytesIO(image_data.read()))
-                        img_width, img_height = img_pil.size
-                        aspect_ratio = img_height / img_width
-                        max_width = 4.5 # Inches
+                        image_file = img_data['image']
+                        figure_num = img_data['figure_num']
+                        prompt = img_data.get('prompt', '')
                         
-                        if img_width > max_width * 72: # DPI
-                            draw_width = Inches(max_width)
-                            draw_height = draw_width * aspect_ratio
-                        else:
-                            draw_width = Inches(img_width / 72)
-                            draw_height = Inches(img_height / 72)
-                            if draw_height > Inches(3.0):
-                                draw_height = Inches(3.0)
-                                draw_width = draw_height / aspect_ratio
+                        image_file.seek(0)
+                        # Attempt to get image dimensions for better scaling
+                        try:
+                            img_pil = PilImage.open(BytesIO(image_file.read()))
+                            img_width, img_height = img_pil.size
+                            aspect_ratio = img_height / img_width
+                            max_width = 4.5 # Inches
+                            
+                            if img_width > max_width * 72: # DPI
+                                draw_width = Inches(max_width)
+                                draw_height = draw_width * aspect_ratio
+                                if draw_height > Inches(3.0): # Limit height
+                                    draw_height = Inches(3.0)
+                                    draw_width = draw_height / aspect_ratio
+                            else:
+                                draw_width = Inches(img_width / 72)
+                                draw_height = Inches(img_height / 72)
+                                if draw_height > Inches(3.0):
+                                    draw_height = Inches(3.0)
+                                    draw_width = draw_height / aspect_ratio
 
-                    except Exception as pil_err:
-                        st.warning(f"PIL error for DOCX image {sec_key}: {pil_err}. Using default image size.")
-                        draw_width = Inches(4.5)
-                        draw_height = Inches(3.0)
-                    
-                    image_data.seek(0)
-                    doc.add_picture(image_data, width=draw_width)
-                except Exception as e:
-                    st.warning(f"Could not add image to complete DOCX: {str(e)}")
+                        except Exception as pil_err:
+                            st.warning(f"PIL error for DOCX image {sec_key}: {pil_err}. Using default image size.")
+                            draw_width = Inches(4.5)
+                            draw_height = Inches(3.0)
+                        
+                        image_file.seek(0)
+                        doc.add_picture(image_file, width=draw_width)
+
+                        # Add caption
+                        caption_text = f"Figure {figure_num}"
+                        if prompt:
+                            caption_text += f": {prompt[:100]}..."
+                        p_caption = doc.add_paragraph(caption_text)
+                        p_caption.italic = True
+                        p_caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        
+                    except Exception as e:
+                        st.warning(f"Could not add image {figure_num} to complete DOCX: {str(e)}")
             
             # Add content
             content = content_dict.get(sec_key, "[Not generated]")
@@ -1407,7 +1461,7 @@ def compile_complete_docx(outline, course_info, content_dict):
             for line in content.split('\n'):
                 line = line.strip()
                 if line:
-                    # Simple markdown handling for bold and italic in complete DOCX
+                    # Simple markdown handling for bold and italic
                     p = doc.add_paragraph()
                     parts = re.split(r'(\*\*.+?\*\*|\*.+?\*)', line)
                     for part in parts:
@@ -1560,7 +1614,7 @@ def show_configuration_page():
     with col1:
         api_key = st.text_input(
             "Grok API Key",
-            value=st.session_state.api_key,
+            value=st.session_state.api_key if st.session_state.api_key else DEFAULT_API_KEY, # Use default if empty
             type="password",
             key="api_key_input",
             help="Your Grok API key from x.ai - starts with 'xai-'"
@@ -1569,41 +1623,48 @@ def show_configuration_page():
         
         if api_key and api_key.startswith('xai-'):
             st.success("✅ Valid API key format")
+            st.session_state.api_configured = True
         else:
             st.warning("⚠️ API key should start with 'xai-'")
+            st.session_state.api_configured = False
     
     with col2:
         st.write("")
         st.write("")
         if st.button("🧪 Test API", use_container_width=True, key="test_api_btn"):
             with st.expander("🔍 API Test Results", expanded=True):
-                st.info("Testing API connection and response quality...")
-                
-                test_messages = [
-                    {"role": "system", "content": "You are a helpful academic content generator."},
-                    {"role": "user", "content": "Write a 200-word introduction about Organizational Behaviour. Include: definition, importance, and key concepts. Use academic tone."}
-                ]
-                
-                test_response = make_api_call(test_messages, max_tokens=500)
-                
-                if test_response:
-                    st.success("✅ API is working!")
-                    st.write("**Response Preview:**")
-                    st.write(test_response[:300] + "...")
-                    
-                    word_count = len(test_response.split())
-                    if word_count >= 150:
-                        st.success(f"✅ Good response length: {word_count} words")
-                    else:
-                        st.warning(f"⚠️ Response seems short: {word_count} words")
-                    
-                    if len(test_response) > 100:
-                        st.success("✅ API returning substantial content")
-                        st.info("💡 Your API is ready for curriculum generation!")
-                    else:
-                        st.error("❌ API response too short - check configuration")
+                if not st.session_state.api_key:
+                    st.error("❌ Please enter an API key first.")
+                elif not st.session_state.api_key.startswith('xai-'):
+                    st.error("❌ Invalid API key format. It should start with 'xai-'.")
                 else:
-                    st.error("❌ API test failed - check logs above")
+                    st.info("Testing API connection and response quality...")
+                    
+                    test_messages = [
+                        {"role": "system", "content": "You are a helpful academic content generator."},
+                        {"role": "user", "content": "Write a 200-word introduction about Organizational Behaviour. Include: definition, importance, and key concepts. Use academic tone."}
+                    ]
+                    
+                    test_response = make_api_call(test_messages, max_tokens=500)
+                    
+                    if test_response:
+                        st.success("✅ API is working!")
+                        st.write("**Response Preview:**")
+                        st.write(test_response[:300] + "...")
+                        
+                        word_count = len(test_response.split())
+                        if word_count >= 150:
+                            st.success(f"✅ Good response length: {word_count} words")
+                        else:
+                            st.warning(f"⚠️ Response seems short: {word_count} words")
+                        
+                        if len(test_response) > 100:
+                            st.success("💡 API returning substantial content")
+                            st.info("Your API is ready for curriculum generation!")
+                        else:
+                            st.error("❌ API response too short - check configuration")
+                    else:
+                        st.error("❌ API test failed - check logs above")
     
     st.divider()
     
@@ -1636,7 +1697,7 @@ def show_configuration_page():
             "Credits",
             min_value=1,
             max_value=10,
-            value=int(course_info_from_syllabus.get('credits', st.session_state.credits)) if course_info_from_syllabus.get('credits') else st.session_state.credits,
+            value=int(course_info_from_syllabus.get('credits', st.session_state.credits))) if course_info_from_syllabus.get('credits') else st.session_state.credits,
             key="credits_input",
             help="Number of credit hours"
         )
@@ -1847,6 +1908,8 @@ def show_configuration_page():
     if st.button("Next: Generate Outline →", type="primary", use_container_width=True, key="config_next"):
         if not st.session_state.course_title:
             st.error("❌ Please enter a course title")
+        elif not st.session_state.api_configured and not st.session_state.api_key: # Check if API key is required and missing
+            st.error("❌ Please enter your Grok API key to proceed.")
         else:
             st.session_state.step = 'outline_generation'
             st.rerun()
@@ -1899,19 +1962,22 @@ def show_outline_page():
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("🤖 Generate Outline with AI", type="primary", use_container_width=True, key="generate_ai_outline"):
-                    with st.spinner("🤖 AI is creating your course outline... This may take 30-60 seconds"):
-                        generated_outline = generate_outline_with_ai()
-                        
-                        if generated_outline:
-                            st.session_state.raw_outline = generated_outline # Store as raw outline
-                            st.session_state.approved_outline = generated_outline # Also set as approved initially
-                            st.session_state.outline_generated = True
-                            st.success("✅ Outline generated successfully!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("❌ AI generation failed. Please try again or check your API key.")
-                            return
+                    if not st.session_state.api_configured:
+                        st.error("❌ API key is not configured. Please go back to Configuration to set it up.")
+                    else:
+                        with st.spinner("🤖 AI is creating your course outline... This may take 30-60 seconds"):
+                            generated_outline = generate_outline_with_ai()
+                            
+                            if generated_outline:
+                                st.session_state.raw_outline = generated_outline # Store as raw outline
+                                st.session_state.approved_outline = generated_outline # Also set as approved initially
+                                st.session_state.outline_generated = True
+                                st.success("✅ Outline generated successfully!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ AI generation failed. Please try again or check your API key.")
+                                return
             
             with col2:
                 if st.button("← Back to Configuration", use_container_width=True, key="back_no_outline"):
@@ -1935,9 +2001,9 @@ def show_outline_page():
     
     st.divider()
     
-    # Convert outline to editable table format
+    # Edit outline
     st.subheader("✏️ Review and Edit Outline")
-    st.caption("Click any cell to edit directly. You can modify titles and descriptions.")
+    st.caption("Click any cell to edit directly. You can modify titles and descriptions. Add new rows by clicking '+ Add Row' at the bottom.")
     
     rows = []
     for unit in outline:
@@ -1954,7 +2020,7 @@ def show_outline_page():
         rows,
         num_rows="dynamic",
         use_container_width=True,
-        height=400,
+        height=max(300, len(rows) * 35), # Adjust height based on number of rows
         key="outline_editor",
         column_config={
             "Unit": st.column_config.NumberColumn("Unit #", width="small"),
@@ -1962,7 +2028,8 @@ def show_outline_page():
             "Section": st.column_config.TextColumn("Section #", width="small"),
             "Section Title": st.column_config.TextColumn("Section Title", width="medium"),
             "Description": st.column_config.TextColumn("Description", width="large"),
-        }
+        },
+        hide_index=True
     )
     
     st.divider()
@@ -1985,41 +2052,57 @@ def show_outline_page():
         if st.button("✅ Approve & Generate Content →", type="primary", use_container_width=True, key="approve_outline_btn"):
             # Convert edited data back to outline format
             approved = []
-            current_unit = None
+            current_unit_data = None
             
-            # Sort rows by Unit and then Section for proper reconstruction
-            sorted_edited = sorted(edited, key=lambda x: (int(x['Unit']), x['Section']))
+            # Sort rows by Unit and then by Section for proper reconstruction
+            # Ensure Unit is treated as integer for sorting
+            try:
+                sorted_edited = sorted(edited, key=lambda x: (int(x['Unit']), x['Section']))
+            except Exception as e:
+                st.error(f"Error sorting outline data. Please ensure Unit numbers are valid integers. Error: {e}")
+                return
 
             for row in sorted_edited:
-                unit_num = int(row['Unit'])
-                unit_title = row['Unit Title']
-                section_num = row['Section']
-                section_title = row['Section Title']
-                description = row.get('Description', '') # Use .get for safety
-                
-                if current_unit is None or current_unit['unit_number'] != unit_num:
-                    if current_unit:
-                        approved.append(current_unit)
-                    current_unit = {
+                try:
+                    unit_num = int(row['Unit'])
+                    unit_title = row['Unit Title']
+                    section_num = row['Section']
+                    section_title = row['Section Title']
+                    description = row.get('Description', '') # Use .get for safety
+                except Exception as e:
+                    st.error(f"Error processing row: {row}. Please check data format. Error: {e}")
+                    continue # Skip this row and try to continue
+
+                if current_unit_data is None or current_unit_data['unit_number'] != unit_num:
+                    if current_unit_data:
+                        approved.append(current_unit_data)
+                    current_unit_data = {
                         'unit_number': unit_num,
                         'unit_title': unit_title,
                         'sections': []
                     }
                 
-                current_unit['sections'].append({
+                current_unit_data['sections'].append({
                     'section_number': section_num,
                     'section_title': section_title,
                     'description': description
                 })
             
-            if current_unit: # Add the last processed unit
-                approved.append(current_unit)
+            if current_unit_data: # Add the last processed unit
+                approved.append(current_unit_data)
             
+            if not approved:
+                st.error("Failed to reconstruct the outline from edited data. Please check your entries.")
+                return
+
             st.session_state.approved_outline = approved
             st.session_state.images = {}  # Reset images
             st.session_state.image_prompts = {}  # Reset image prompts
             st.session_state.content = {} # Clear previous content if re-generating
             st.session_state.content_status = {} # Clear previous content status
+            st.session_state.sections_to_process = [] # Clear previous processing list
+            st.session_state.paused = False # Ensure not paused
+            st.session_state.generation_start_time = None # Reset timer
             st.session_state.step = 'content_generation'
             st.success("✅ Outline approved! Moving to content generation...")
             time.sleep(1)
@@ -2071,11 +2154,11 @@ def show_sidebar_status():
             outline_status = "✅ Generated" if st.session_state.outline_generated else "❌ Not Generated"
             st.write(f"Outline: {outline_status}")
         elif st.session_state.step == 'content_generation':
-            total_sections = len(st.session_state.sections_to_process) if st.session_state.sections_to_process else 0
+            total_sections_to_process = len(st.session_state.sections_to_process)
             completed_sections = len(st.session_state.content)
-            progress_pct = (completed_sections / total_sections * 100) if total_sections > 0 else 0
+            progress_pct = (completed_sections / total_sections_to_process * 100) if total_sections_to_process > 0 else 0
             st.progress(progress_pct / 100)
-            st.write(f"Content: {completed_sections}/{total_sections} sections ({progress_pct:.0f}%)")
+            st.write(f"Content: {completed_sections}/{total_sections_to_process} sections ({progress_pct:.0f}%)")
             if st.session_state.paused:
                 st.warning("Generation is paused")
         elif st.session_state.step == 'compilation':
@@ -2106,11 +2189,11 @@ def show_content_generation_page():
         return
     
     # Initialize generation if not already started or if resuming
-    if not st.session_state.content or not st.session_state.content_status:
+    if not st.session_state.sections_to_process or not st.session_state.content or not st.session_state.content_status:
         st.session_state.content = {}
         st.session_state.content_status = {} # Store status per section
-        st.session_state.images = {}
-        st.session_state.image_prompts = {}
+        st.session_state.images = {} # Reset images for new generation
+        st.session_state.image_prompts = {} # Reset image prompts
         st.session_state.generation_start_time = time.time()
         st.session_state.paused = False
         
@@ -2126,246 +2209,304 @@ def show_content_generation_page():
                     'description': section.get('description', '')
                 })
         st.session_state.sections_to_process = sections_to_process
-        
     
-    total = len(st.session_state.sections_to_process)
-    completed = len(st.session_state.content) # Number of successfully generated sections
+    total_sections_to_process = len(st.session_state.sections_to_process)
+    completed_sections = len(st.session_state.content) # Number of successfully generated sections
     
     # Progress metrics
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("✅ Completed", f"{completed}/{total}")
+        st.metric("✅ Completed", f"{completed_sections}/{total_sections_to_process}")
     with col2:
-        progress_pct = (completed / total * 100) if total > 0 else 0
+        progress_pct = (completed_sections / total_sections_to_process * 100) if total_sections_to_process > 0 else 0
         st.metric("📊 Progress", f"{progress_pct:.0f}%")
     with col3:
-        st.metric("⏳ Remaining", total - completed)
+        st.metric("⏳ Remaining", total_sections_to_process - completed_sections)
     with col4:
-        if completed > 0 and not st.session_state.paused:
+        if completed_sections > 0 and not st.session_state.paused:
             elapsed = time.time() - st.session_state.generation_start_time
-            avg_time = elapsed / completed
-            eta_seconds = int(avg_time * (total - completed))
+            avg_time = elapsed / completed_sections
+            eta_seconds = int(avg_time * (total_sections_to_process - completed_sections))
             eta_minutes = eta_seconds // 60
             st.metric("⏱️ ETA", f"~{eta_minutes}min")
         else:
             st.metric("⏱️ ETA", "N/A")
     
     # Progress bar
-    st.progress(completed / total if total > 0 else 0)
+    st.progress(completed_sections / total_sections_to_process if total_sections_to_process > 0 else 0)
     
     st.divider()
     
-    # Generate content section by section
-    if completed < total:
-        # Find the next section to process that hasn't been fully generated
-        current_section_data = None
-        for section_data in st.session_state.sections_to_process:
-            sec_key = f"{section_data['section_number']} {section_data['section_title']}"
-            if sec_key not in st.session_state.content:
-                current_section_data = section_data
-                break
-        
-        if not current_section_data:
-            st.error("Internal Error: Could not find next section to process.")
-            return
+    # Find the next section to process that hasn't been fully generated
+    current_section_data = None
+    for section_data in st.session_state.sections_to_process:
+        sec_key = f"{section_data['section_number']} {section_data['section_title']}"
+        if sec_key not in st.session_state.content or st.session_state.content_status.get(sec_key) != "Generated":
+            current_section_data = section_data
+            break
+    
+    if not current_section_data and completed_sections == total_sections_to_process:
+        # This case should be handled by the "All Content Generated Successfully!" block below
+        pass 
+    elif not current_section_data:
+        st.error("Internal Error: Could not find next section to process, but not all sections are marked as complete.")
+        return
 
-        section_key = f"{current_section_data['section_number']} {current_section_data['section_title']}"
-        
-        st.subheader(f"🤖 Generating: {section_key}")
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.info(f"**Unit {current_section_data['unit_number']}:** {current_section_data['unit_title']}")
-            st.write(f"**Description:** {current_section_data['description']}")
-        
-        with col2:
+    section_key = f"{current_section_data['section_number']} {current_section_data['section_title']}"
+    
+    st.subheader(f"🤖 Generating: {section_key}")
+    
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.info(f"**Unit {current_section_data['unit_number']}:** {current_section_data['unit_title']}")
+        st.write(f"**Description:** {current_section_data['description']}")
+    
+    with col2:
+        if not st.session_state.paused:
             if st.button("⏸️ Pause Generation", key="pause_gen", use_container_width=True):
                 st.session_state.paused = True
                 st.rerun()
-        
-        # Generate content if not paused
-        if not st.session_state.paused:
-            with st.spinner(f"✍️ Writing content for section {completed + 1} of {total}... This may take 30-60 seconds"):
-                
-                # Build context
-                context = {
-                    'course_title': st.session_state.course_title,
-                    'course_code': st.session_state.course_code,
-                    'credits': st.session_state.credits,
-                    'target_audience': st.session_state.target_audience,
-                    'program_objectives': st.session_state.program_objectives,
-                    'program_outcomes': st.session_state.program_outcomes,
-                    'course_outcomes': st.session_state.course_outcomes,
-                    'specialized_outcomes': st.session_state.specialized_outcomes,
-                    'learning_objectives': st.session_state.learning_objectives,
-                    'prerequisites': st.session_state.prerequisites,
-                    'assessment_methods': st.session_state.assessment_methods
-                }
-                
-                # Generate content
-                with st.expander("🔍 Content Generation Details", expanded=True):
-                    content = generate_content(current_section_data, context)
-                
-                if content and len(content.strip()) > 100:
-                    st.session_state.content[section_key] = content
-                    st.session_state.content_status[section_key] = "Generated"
-                    st.success(f"✅ Content generated for {section_key}")
-                    
-                    # Show preview
-                    with st.expander("📄 Content Preview", expanded=False):
-                        st.write(content[:500] + "...")
-                    
-                    st.divider()
-                    
-                    # ===== IMAGE SECTION =====
-                    st.subheader("🖼️ Add Image for This Section (Optional)")
-                    
-                    tab1, tab2 = st.tabs(["📤 Upload Image", "🤖 Generate Image Prompt"])
-                    
-                    with tab1:
-                        st.info("💡 Upload a relevant image for this section")
-                        # Use a unique key for each section's uploader
-                        uploaded_image = st.file_uploader(
-                            f"Upload image for {section_key}",
-                            type=['png', 'jpg', 'jpeg'],
-                            key=f"image_upload_{section_key}" # Keyed by section_key
-                        )
-                        
-                        if uploaded_image:
-                            st.session_state.images[section_key] = uploaded_image
-                            st.success("✅ Image uploaded successfully!")
-                            st.image(uploaded_image, caption=section_key, width=300)
-                    
-                    with tab2:
-                        st.info("💡 Generate an AI prompt to create an image for this section")
-                        
-                        # Initialize image prompt if not present
-                        if section_key not in st.session_state.image_prompts:
-                            st.session_state.image_prompts[section_key] = ""
-
-                        if st.button("🤖 Generate Image Prompt", key=f"gen_img_prompt_{section_key}"):
-                            with st.spinner("Generating image prompt..."):
-                                img_prompt = generate_image_prompt_for_section(current_section_data, context)
-                                if img_prompt:
-                                    st.session_state.image_prompts[section_key] = img_prompt
-                                    st.rerun()
-                        
-                        # Display and allow editing of the prompt
-                        if st.session_state.image_prompts.get(section_key):
-                            st.success("✅ Image prompt generated!")
-                            prompt_text = st.text_area(
-                                "Image Generation Prompt (edit if needed):",
-                                value=st.session_state.image_prompts[section_key],
-                                height=150,
-                                key=f"img_prompt_text_{section_key}" # Keyed by section_key
-                            )
-                            # Update session state if prompt text is changed
-                            if prompt_text != st.session_state.image_prompts[section_key]:
-                                st.session_state.image_prompts[section_key] = prompt_text
-                            
-                            st.info("💡 Copy this prompt and use it with DALL-E, Midjourney, or Stable Diffusion to generate an image, then upload it in the 'Upload Image' tab")
-                            
-                            if st.button("📋 Copy Prompt", key=f"copy_prompt_{section_key}"):
-                                st.code(prompt_text)
-                    
-                    st.divider()
-                    
-                    # Continue or skip buttons
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("⏭️ Skip Image & Continue", type="primary", use_container_width=True, key=f"skip_img_{section_key}"):
-                            time.sleep(0.5)
-                            st.rerun()
-                    
-                    with col2:
-                        if st.button("✅ Save & Continue", type="primary", use_container_width=True, key=f"continue_{section_key}"):
-                            time.sleep(0.5)
-                            st.rerun()
-                    
-                else:
-                    st.error("❌ Content generation failed or returned insufficient content")
-                    st.session_state.content_status[section_key] = "Failed"
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("🔄 Retry", type="primary", use_container_width=True, key=f"retry_{section_key}"):
-                            st.rerun()
-                    with col2:
-                        if st.button("⏭️ Skip This Section", use_container_width=True, key=f"skip_section_{section_key}"):
-                            st.session_state.content[section_key] = "[Content generation skipped]"
-                            st.session_state.content_status[section_key] = "Skipped"
-                            st.rerun()
         else:
-            # Paused state
-            st.warning("⏸️ Content generation paused")
-            st.info(f"Currently at section {completed + 1} of {total}")
-            
-            if st.button("▶️ Resume Generation", type="primary", key="resume_gen"):
+            if st.button("▶️ Resume Generation", type="primary", key="resume_gen", use_container_width=True):
                 st.session_state.paused = False
                 st.rerun()
     
-    else:
-        # All content generated
-        st.success("🎉 All Content Generated Successfully!")
-        
-        total_words = sum(len(c.split()) for c in st.session_state.content.values())
-        est_pages = total_words // 300 + 1 if total_words > 0 else 0
-        images_added = len(st.session_state.images)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("✅ Completed", f"{completed}/{total}")
-        with col2:
-            st.metric("📊 Progress", "100%")
-        with col3:
-            st.metric("⏳ Remaining", 0)
-        with col4:
-            st.metric("⏱️ ETA", "Done")
+    # Generate content if not paused
+    if not st.session_state.paused:
+        with st.spinner(f"✍️ Writing content for section {completed_sections + 1} of {total_sections_to_process}... This may take 30-60 seconds"):
             
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("📚 Units", len(st.session_state.approved_outline))
-        with col2:
-            st.metric("📝 Total Sections", total)
-        with col3:
-            st.metric("📄 Est. Pages", f"~{est_pages}")
-        with col4:
-            st.metric("🖼️ Images", images_added)
-        
-        # Show content summary
-        with st.expander("📊 Content Summary", expanded=False):
-            for unit in st.session_state.approved_outline:
-                st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
-                for section in unit.get('sections', []):
-                    sec_key = f"{section['section_number']} {section['section_title']}"
-                    content_words = len(st.session_state.content.get(sec_key, '').split())
-                    status = st.session_state.content_status.get(sec_key, "Unknown")
-                    has_image = "🖼️" if sec_key in st.session_state.images else ""
-                    st.write(f"  - {sec_key}: {status} ({content_words:,} words) {has_image}")
-        
-        st.divider()
-        
-        # Navigation buttons
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("← Back to Outline", use_container_width=True, key="back_from_gen"):
-                st.session_state.step = 'outline_generation'
-                st.rerun()
-        
-        with col2:
-            if st.button("🔄 Regenerate All", use_container_width=True, key="regen_all"):
-                if st.checkbox("⚠️ Confirm: This will delete all generated content", key="confirm_regen"):
-                    st.session_state.content = {}
-                    st.session_state.content_status = {}
-                    st.session_state.images = {}
-                    st.session_state.image_prompts = {}
-                    st.session_state.generation_start_time = time.time() # Reset timer
+            # Build context
+            context = {
+                'course_title': st.session_state.course_title,
+                'course_code': st.session_state.course_code,
+                'credits': st.session_state.credits,
+                'target_audience': st.session_state.target_audience,
+                'program_objectives': st.session_state.program_objectives,
+                'program_outcomes': st.session_state.program_outcomes,
+                'course_outcomes': st.session_state.course_outcomes,
+                'specialized_outcomes': st.session_state.specialized_outcomes,
+                'learning_objectives': st.session_state.learning_objectives,
+                'prerequisites': st.session_state.prerequisites,
+                'assessment_methods': st.session_state.assessment_methods
+            }
+            
+            # Generate content
+            content = ""
+            try:
+                with st.expander("🔍 Content Generation Details", expanded=True):
+                    content = generate_content(current_section_data, context)
+            except Exception as e:
+                st.error(f"An error occurred during content generation: {e}")
+                content = None # Ensure content is None on error
+
+            if content and len(content.strip()) > 100:
+                st.session_state.content[section_key] = content
+                st.session_state.content_status[section_key] = "Generated"
+                st.success(f"✅ Content generated for {section_key}")
+                
+                # Show preview
+                with st.expander("📄 Content Preview", expanded=False):
+                    st.write(content[:500] + "...")
+                
+                st.divider()
+                
+                # ===== IMAGE SECTION =====
+                # Initialize images list for this section if not present
+                if section_key not in st.session_state.images:
+                    st.session_state.images[section_key] = []
+                
+                # Initialize image prompt if not present
+                if section_key not in st.session_state.image_prompts:
+                    st.session_state.image_prompts[section_key] = ""
+                
+                # Generate Image Prompt Section
+                st.markdown("**🤖 AI Image Prompt Generator**")
+                st.info("Generate an AI prompt to create images for this section")
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if st.button("🤖 Generate Image Prompt", key=f"gen_img_prompt_{section_key}"):
+                        with st.spinner("Generating image prompt..."):
+                            img_prompt = generate_image_prompt_for_section(current_section_data, context)
+                            if img_prompt:
+                                st.session_state.image_prompts[section_key] = img_prompt
+                                st.rerun()
+                
+                # Display the prompt if generated
+                if st.session_state.image_prompts.get(section_key):
+                    st.success("✅ Image prompt generated!")
+                    prompt_text = st.text_area(
+                        "Image Generation Prompt (copy and use with DALL-E, Midjourney, or Stable Diffusion):",
+                        value=st.session_state.image_prompts[section_key],
+                        height=120,
+                        key=f"img_prompt_text_{section_key}"
+                    )
+                    # Update session state if prompt text is changed
+                    if prompt_text != st.session_state.image_prompts[section_key]:
+                        st.session_state.image_prompts[section_key] = prompt_text
+                    
+                    if st.button("📋 Copy to Clipboard", key=f"copy_prompt_{section_key}"):
+                        st.code(prompt_text, language=None)
+                
+                st.divider()
+                
+                st.markdown("**📤 Upload Images**")
+                st.info("Upload one or more images for this section. Each image will be numbered automatically.")
+                
+                # Show existing images
+                current_images = st.session_state.images.get(section_key, [])
+                if current_images:
+                    st.markdown(f"**Current Images ({len(current_images)}):**")
+                    for idx, img_data in enumerate(current_images):
+                        col1, col2, col3 = st.columns([1, 3, 1])
+                        with col1:
+                            st.markdown(f"**Figure {img_data['figure_num']}**")
+                        with col2:
+                            st.image(img_data['image'], width=200)
+                            if img_data['prompt']:
+                                with st.expander("View Prompt"):
+                                    st.text(img_data['prompt'])
+                        with col3:
+                            if st.button("🗑️ Remove", key=f"remove_img_{section_key}_{idx}"):
+                                st.session_state.images[section_key].pop(idx)
+                                # Renumber remaining images
+                                for i, img in enumerate(st.session_state.images[section_key]):
+                                    img['figure_num'] = i + 1
+                                st.rerun()
+                    st.divider()
+                
+                # Upload new image
+                uploaded_image = st.file_uploader(
+                    f"Upload new image for {section_key}",
+                    type=['png', 'jpg', 'jpeg'],
+                    key=f"image_upload_{section_key}"
+                )
+                
+                if uploaded_image:
+                    # Calculate next figure number
+                    next_figure_num = len(current_images) + 1
+                    
+                    # Add image with metadata
+                    new_image_data = {
+                        'image': uploaded_image,
+                        'prompt': st.session_state.image_prompts.get(section_key, ""),
+                        'figure_num': next_figure_num
+                    }
+                    
+                    # Append to images list
+                    if section_key not in st.session_state.images:
+                        st.session_state.images[section_key] = []
+                    st.session_state.images[section_key].append(new_image_data)
+                    
+                    st.success(f"✅ Image {next_figure_num} uploaded successfully!")
                     st.rerun()
-        
-        with col3:
-            if st.button("📄 Compile Documents →", type="primary", use_container_width=True, key="go_compile"):
-                st.session_state.step = 'compilation'
-                st.rerun()
+                
+                st.divider()
+                
+                # Continue or skip buttons
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("⏭️ Skip Images & Continue", type="primary", use_container_width=True, key=f"skip_img_{section_key}"):
+                        time.sleep(0.5)
+                        st.rerun()
+                
+                with col2:
+                    if st.button("✅ Save & Continue", type="primary", use_container_width=True, key=f"continue_{section_key}"):
+                        time.sleep(0.5)
+                        st.rerun()
+                
+            else:
+                st.error("❌ Content generation failed or returned insufficient content")
+                st.session_state.content_status[section_key] = "Failed"
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Retry", type="primary", use_container_width=True, key=f"retry_{section_key}"):
+                        st.rerun()
+                with col2:
+                    if st.button("⏭️ Skip This Section", use_container_width=True, key=f"skip_section_{section_key}"):
+                        st.session_state.content[section_key] = "[Content generation skipped]"
+                        st.session_state.content_status[section_key] = "Skipped"
+                        st.rerun()
+    else:
+        # All content generated or paused state handled
+        if not st.session_state.paused:
+            st.success("🎉 All Content Generated Successfully!")
+            
+            total_words = sum(len(c.split()) for c in st.session_state.content.values())
+            est_pages = total_words // 300 + 1 if total_words > 0 else 0
+            images_added = sum(len(img_list) for img_list in st.session_state.images.values())
+            
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("✅ Completed", f"{completed_sections}/{total_sections_to_process}")
+            with col2:
+                st.metric("📊 Progress", "100%")
+            with col3:
+                st.metric("⏳ Remaining", 0)
+            with col4:
+                st.metric("⏱️ ETA", "Done")
+                
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("📚 Units", len(st.session_state.approved_outline))
+            with col2:
+                st.metric("📝 Total Sections", total_sections_to_process)
+            with col3:
+                st.metric("📄 Est. Pages", f"~{est_pages}")
+            with col4:
+                st.metric("🖼️ Images", images_added)
+            
+            # Show content summary
+            with st.expander("📊 Content Summary", expanded=False):
+                for unit in st.session_state.approved_outline:
+                    st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
+                    for section in unit.get('sections', []):
+                        sec_key = f"{section['section_number']} {section['section_title']}"
+                        content_words = len(st.session_state.content.get(sec_key, '').split())
+                        status = st.session_state.content_status.get(sec_key, "Unknown")
+                        has_image = "🖼️" if sec_key in st.session_state.images and st.session_state.images[sec_key] else ""
+                        st.write(f"  - {sec_key}: {status} ({content_words:,} words) {has_image}")
+            
+            st.divider()
+            
+            # Navigation buttons
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button("← Back to Outline", use_container_width=True, key="back_from_gen"):
+                    st.session_state.step = 'outline_generation'
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔄 Regenerate All Content", use_container_width=True, key="regen_all"):
+                    if st.checkbox("⚠️ Confirm: This will delete all generated content and images", key="confirm_regen"):
+                        st.session_state.content = {}
+                        st.session_state.content_status = {}
+                        st.session_state.images = {}
+                        st.session_state.image_prompts = {}
+                        st.session_state.sections_to_process = [] # Reset this to re-initialize
+                        st.session_state.generation_start_time = None # Reset timer
+                        st.rerun()
+            
+            with col3:
+                if st.button("📄 Compile Documents →", type="primary", use_container_width=True, key="go_compile"):
+                    st.session_state.step = 'compilation'
+                    st.rerun()
+        else:
+            # Paused state display if generation was paused
+            st.warning("⏸️ Content generation is paused.")
+            st.info(f"Current progress: {completed_sections}/{total_sections_to_process} sections generated.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("▶️ Resume Generation", type="primary", key="resume_gen_paused", use_container_width=True):
+                    st.session_state.paused = False
+                    st.rerun()
+            with col2:
+                if st.button("Go to Compilation", type="secondary", key="go_compile_paused", use_container_width=True):
+                    st.session_state.step = 'compilation'
+                    st.rerun()
+
 
 # ============================================================================
 # PAGE 5: COMPILATION AND DOWNLOAD
@@ -2393,16 +2534,16 @@ def show_compilation_page():
     # ========== Summary ==========
     st.subheader("📊 Content Summary")
     
-    total_sections = len(st.session_state.content)
+    total_sections_generated = len(st.session_state.content)
     total_words = sum(len(c.split()) for c in st.session_state.content.values())
     est_pages = total_words // 300 + 1 if total_words > 0 else 0
-    images_count = len(st.session_state.images)
+    images_count = sum(len(img_list) for img_list in st.session_state.images.values())
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("📚 Units", len(st.session_state.approved_outline))
     with col2:
-        st.metric("📝 Sections", total_sections)
+        st.metric("📝 Sections Generated", total_sections_generated)
     with col3:
         st.metric("📄 Words", f"{total_words:,}")
     with col4:
@@ -2424,7 +2565,6 @@ def show_compilation_page():
             key="compile_type",
             help="Choose whether to compile each unit separately, one complete file, or both"
         )
-        st.session_state.compile_type = compile_type # Update session state
     
     with col2:
         output_format = st.radio(
@@ -2433,8 +2573,8 @@ def show_compilation_page():
             index=0, # Default to PDF
             key="output_format",
             help="PDF for final documents, DOCX for editable Word files"
+
         )
-        st.session_state.output_format = output_format # Update session state
     
     
     st.divider()
@@ -2458,16 +2598,19 @@ def show_compilation_page():
             progress_bar_units = st.progress(0)
             status_text_units = st.empty()
             
-            for i, unit in enumerate(st.session_state.approved_outline):
+            # Sort units by number for consistent output order
+            sorted_units = sorted(st.session_state.approved_outline, key=lambda x: x['unit_number'])
+
+            for i, unit in enumerate(sorted_units):
                 unit_num = unit['unit_number']
                 # Ensure unit title is present and clean it for filename
                 unit_title = unit.get('unit_title', f"Unit_{unit_num}")
-                safe_unit_title = re.sub(r'[^\w\s-]', '', unit_title).strip()
+                safe_unit_title = re.sub(r'[^\w\s-]', '', unit_title).strip().replace(' ', '_')
                 if not safe_unit_title: safe_unit_title = f"Unit_{unit_num}"
                 
-                status_text_units.text(f"Compiling Unit {unit_num}: {safe_unit_title}...")
+                status_text_units.text(f"Compiling Unit {unit_num}: {unit_title}...")
                 
-                with st.spinner(f"Compiling Unit {unit_num}: {safe_unit_title}..."):
+                with st.spinner(f"Compiling Unit {unit_num}: {unit_title}..."):
                     if output_format == "PDF":
                         file_buffer = compile_unit_pdf(unit, course_info, st.session_state.content)
                     else:
@@ -2489,7 +2632,7 @@ def show_compilation_page():
                     else:
                         st.error(f"❌ Failed to compile Unit {unit_num}")
                 
-                progress_bar_units.progress((i + 1) / len(st.session_state.approved_outline))
+                progress_bar_units.progress((i + 1) / len(sorted_units))
             
             status_text_units.text("✅ All individual units compiled!")
         
@@ -2514,7 +2657,7 @@ def show_compilation_page():
                 if file_buffer:
                     ext = '.pdf' if output_format == "PDF" else '.docx'
                     # Clean course title for filename
-                    safe_course_title = re.sub(r'[^\w\s-]', '', st.session_state.course_title).strip()
+                    safe_course_title = re.sub(r'[^\w\s-]', '', st.session_state.course_title).strip().replace(' ', '_')
                     if not safe_course_title: safe_course_title = "Course"
                     filename = f"Complete_{st.session_state.course_code}_{safe_course_title}{ext}"
                     mime_type = 'application/pdf' if output_format == "PDF" else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -2559,7 +2702,7 @@ def show_compilation_page():
                         data=file_data['buffer'].getvalue(),
                         file_name=file_data['filename'],
                         mime=file_data['mime_type'],
-                        key=f"download_{key}_{output_format}", # Unique key
+                        key=f"download_{key}_{output_format}_{int(time.time())}", # Unique key to prevent caching issues
                         use_container_width=True
                     )
                 col_index += 1
@@ -2582,6 +2725,12 @@ def show_compilation_page():
                 # Save important data that should persist if the user starts a new project
                 persistent_data = {
                     'api_key': st.session_state.api_key,
+                    # Add any other default configs you want to keep, e.g., num_units, sections_per_unit
+                    'num_units': st.session_state.num_units,
+                    'sections_per_unit': st.session_state.sections_per_unit,
+                    'upload_choice': st.session_state.upload_choice,
+                    'compile_type': st.session_state.compile_type,
+                    'output_format': st.session_state.output_format,
                 }
                 
                 # Clear everything
