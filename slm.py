@@ -2003,11 +2003,6 @@ def show_outline_page():
 # ============================================================================
 print("Phase 4 Part 1: UI Pages (Syllabus, Config, Outline) loaded successfully")
 """
-PHASE 4: USER INTERFACE PAGES (PART 2)
-========================================
-- Content generation page with image uploads
-- Compilation page with download options
-- Sidebar status display
 """
 
 # ============================================================================
