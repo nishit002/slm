@@ -1697,7 +1697,7 @@ def show_configuration_page():
             "Credits",
             min_value=1,
             max_value=10,
-            value=int(course_info_from_syllabus.get('credits', st.session_state.credits))) if course_info_from_syllabus.get('credits') else st.session_state.credits,
+            value=int(course_info_from_syllabus.get('credits', st.session_state.credits)) if course_info_from_syllabus.get('credits') else st.session_state.credits,
             key="credits_input",
             help="Number of credit hours"
         )
@@ -2350,7 +2350,7 @@ def show_content_generation_page():
                 
                 st.divider()
                 
-                st.markdown("**📤 Upload Images**")
+                st.markdown("**Upload Images**")
                 st.info("Upload one or more images for this section. Each image will be numbered automatically.")
                 
                 # Show existing images
