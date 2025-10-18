@@ -1694,4 +1694,1109 @@ def show_configuration_page():
     st.divider()
     
     # ========== Document Customization ==========
+    st.subheader("📄 Document Customization")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        document_heading = st.text_input(
+            "Document Header Text (Optional)",
+            value=st.session_state.document_heading,
+            key="doc_heading",
+            help="Text to appear in the header of each page",
+            placeholder="e.g., XYZ University - MBA Program"
+        )
+        st.session_state.document_heading = document_heading
+    
+    with col2:
+        logo = st.file_uploader(
+            "Upload Logo for Header (Optional)",
+            type=['png', 'jpg', 'jpeg'],
+            key="logo_uploader",
+            help="Logo will appear in the top-right corner of each page"
+        )
+        if logo:
+            st.session_state.logo = logo
+            st.success("✅ Logo uploaded")
+            # Show preview
+            st.image(logo, width=150, caption="Logo Preview")
+        elif st.session_state.logo:
+            st.info("✅ Logo from previous session")
+    
+    st.divider()
+    
+    # ========== Content Structure ==========
+    if not st.session_state.get('extracted_structure'):
+        st.subheader("📚 Content Structure")
+        st.info("💡 Define how many units and sections you want. AI will generate relevant content for each.")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            num_units = st.number_input(
+                "Number of Units",
+                min_value=1,
+                max_value=10,
+                value=st.session_state.num_units,
+                help="How many major units/modules for this course",
+                key="num_units_config"
+            )
+            st.session_state.num_units = num_units
+        
+        with col2:
+            sections_per_unit = st.number_input(
+                "Sections per Unit",
+                min_value=3,
+                max_value=15,
+                value=st.session_state.sections_per_unit,
+                help="How many topics/sections in each unit",
+                key="sections_per_unit_config"
+            )
+            st.session_state.sections_per_unit = sections_per_unit
+        
+        total_sections = num_units * sections_per_unit
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Units", num_units)
+        with col2:
+            st.metric("Total Sections", total_sections)
+        with col3:
+            st.metric("Est. Pages", f"~{total_sections * 5}")
+        
+        st.caption(f"💡 AI will generate {num_units} units with {sections_per_unit} topics each = {total_sections} total sections")
+    else:
+        st.info("✅ Using structure from uploaded syllabus")
+    
+    st.divider()
+    
+    # ========== Academic Mappings ==========
+    st.subheader("🎯 Academic Mappings (Optional but Recommended)")
+    
+    with st.expander("ℹ️ What are PEO, PO, CO, PSO?", expanded=False):
+        st.markdown("""
+        **Program Educational Objectives (PEO):**
+        - What students can accomplish after completing the entire program
+        - Long-term career and professional achievements
+        
+        **Program Outcomes (PO):**
+        - Skills and knowledge students gain from the program
+        - Example: PO1: Critical thinking, PO2: Communication skills, PO3: Ethical awareness
+        
+        **Course Learning Outcomes (CO):**
+        - What students learn in THIS specific course
+        - Example: CO1: Understand OB concepts [Bloom: Understand], CO2: Apply leadership theories [Bloom: Apply]
+        
+        **Program Specific Outcomes (PSO):**
+        - Specialized skills specific to the program (e.g., MBA-specific)
+        - Example: PSO1: Strategic management, PSO2: Business analytics
+        
+        These mappings help create better-aligned content and demonstrate learning outcomes.
+        """)
+    
+    st.info("💡 These mappings enhance content quality and alignment. Leave blank if not needed.")
+    
+    peo = st.text_area(
+        "Program Educational Objectives (PEO)",
+        value=st.session_state.program_objectives,
+        placeholder="Example:\n- Develop strategic leadership capabilities\n- Foster analytical decision-making skills\n- Build effective communication abilities",
+        help="What students should achieve after completing the program",
+        key="peo_input",
+        height=120
+    )
+    st.session_state.program_objectives = peo
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        po = st.text_area(
+            "Program Outcomes (PO)",
+            value=st.session_state.program_outcomes,
+            placeholder="Example:\nPO1: Critical thinking and problem-solving\nPO2: Effective communication\nPO3: Ethical decision-making\nPO4: Teamwork and collaboration",
+            help="Skills and knowledge from the program",
+            key="po_input",
+            height=150
+        )
+        st.session_state.program_outcomes = po
+    
+    with col2:
+        pso = st.text_area(
+            "Program Specific Outcomes (PSO)",
+            value=st.session_state.specialized_outcomes,
+            placeholder="Example:\nPSO1: Advanced managerial skills\nPSO2: Strategic HR management\nPSO3: Organizational leadership\nPSO4: Change management expertise",
+            help="Specialized skills for this specific program",
+            key="pso_input",
+            height=150
+        )
+        st.session_state.specialized_outcomes = pso
+    
+    co = st.text_area(
+        "Course Learning Outcomes (CO)",
+        value=st.session_state.course_outcomes,
+        placeholder="Example:\nCO1: Understand key organizational behaviour concepts [Bloom: Understand]\nCO2: Apply OB theories to real-world scenarios [Bloom: Apply]\nCO3: Analyze organizational dynamics and culture [Bloom: Analyze]\nCO4: Evaluate organizational strategies [Bloom: Evaluate]",
+        help="What students will learn in THIS specific course",
+        key="co_input",
+        height=150
+    )
+    st.session_state.course_outcomes = co
+    
+    if peo or po or co or pso:
+        st.success("✅ Academic mappings will be integrated into content generation")
+    else:
+        st.info("ℹ️ Content will be generated with general academic outcomes")
+    
+    # Navigation
+    st.divider()
+    if st.button("Next: Generate Outline →", type="primary", use_container_width=True, key="config_next"):
+        if not st.session_state.course_title:
+            st.error("❌ Please enter a course title")
+        else:
+            st.session_state.step = 'outline_generation'
+            st.rerun()
 
+# ============================================================================
+# PAGE 3: OUTLINE GENERATION
+# ============================================================================
+
+def show_outline_page():
+    """Outline generation and editing page"""
+    st.header("📋 Step 3: Course Outline")
+    
+    # Check if outline needs to be generated
+    if not st.session_state.outline_generated or not st.session_state.approved_outline:
+        
+        # Check if extracted from syllabus
+        extracted = st.session_state.get('extracted_structure')
+        
+        if extracted and extracted.get('units'):
+            st.info("✅ Using syllabus structure from uploaded PDF")
+            
+            # Convert extracted structure to outline format
+            outline = []
+            for unit in extracted['units']:
+                sections = []
+                for i, topic in enumerate(unit['topics'], 1):
+                    sections.append({
+                        "section_number": f"{unit['unit_number']}.{i}",
+                        "section_title": topic,
+                        "description": topic
+                    })
+                
+                outline.append({
+                    "unit_number": unit['unit_number'],
+                    "unit_title": unit['unit_title'],
+                    "sections": sections
+                })
+            
+            st.session_state.approved_outline = outline
+            st.session_state.raw_outline = outline # Store as raw outline
+            st.session_state.outline_generated = True
+            st.success(f"✅ Created outline with {len(outline)} units")
+            st.rerun()
+            
+        else:
+            # MUST generate with AI - NO DEFAULTS
+            st.warning("⚠️ No outline generated yet")
+            st.info("💡 Click 'Generate with AI' to create a custom course outline based on your configuration")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🤖 Generate Outline with AI", type="primary", use_container_width=True, key="generate_ai_outline"):
+                    with st.spinner("🤖 AI is creating your course outline... This may take 30-60 seconds"):
+                        generated_outline = generate_outline_with_ai()
+                        
+                        if generated_outline:
+                            st.session_state.raw_outline = generated_outline # Store as raw outline
+                            st.session_state.approved_outline = generated_outline # Also set as approved initially
+                            st.session_state.outline_generated = True
+                            st.success("✅ Outline generated successfully!")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ AI generation failed. Please try again or check your API key.")
+                            return
+            
+            with col2:
+                if st.button("← Back to Configuration", use_container_width=True, key="back_no_outline"):
+                    st.session_state.step = 'configuration'
+                    st.rerun()
+            
+            return
+    
+    # Display and edit outline
+    outline = st.session_state.approved_outline
+    total_sections = sum(len(u.get('sections', [])) for u in outline)
+    
+    # Summary metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("📚 Units", len(outline))
+    with col2:
+        st.metric("📝 Sections", total_sections)
+    with col3:
+        st.metric("📄 Est. Pages", f"~{total_sections * 5}")
+    
+    st.divider()
+    
+    # Convert outline to editable table format
+    st.subheader("✏️ Review and Edit Outline")
+    st.caption("Click any cell to edit directly. You can modify titles and descriptions.")
+    
+    rows = []
+    for unit in outline:
+        for section in unit.get('sections', []):
+            rows.append({
+                'Unit': unit['unit_number'],
+                'Unit Title': unit['unit_title'],
+                'Section': section['section_number'],
+                'Section Title': section['section_title'],
+                'Description': section.get('description', '') # Use .get for safety
+            })
+    
+    edited = st.data_editor(
+        rows,
+        num_rows="dynamic",
+        use_container_width=True,
+        height=400,
+        key="outline_editor",
+        column_config={
+            "Unit": st.column_config.NumberColumn("Unit #", width="small"),
+            "Unit Title": st.column_config.TextColumn("Unit Title", width="medium"),
+            "Section": st.column_config.TextColumn("Section #", width="small"),
+            "Section Title": st.column_config.TextColumn("Section Title", width="medium"),
+            "Description": st.column_config.TextColumn("Description", width="large"),
+        }
+    )
+    
+    st.divider()
+    
+    # Navigation buttons
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("← Back", use_container_width=True, key="back_from_outline"):
+            st.session_state.step = 'configuration'
+            st.rerun()
+    
+    with col2:
+        if st.button("🔄 Regenerate with AI", use_container_width=True, key="regen_outline_btn"):
+            st.session_state.raw_outline = ''
+            st.session_state.approved_outline = []
+            st.session_state.outline_generated = False
+            st.rerun()
+    
+    with col3:
+        if st.button("✅ Approve & Generate Content →", type="primary", use_container_width=True, key="approve_outline_btn"):
+            # Convert edited data back to outline format
+            approved = []
+            current_unit = None
+            
+            # Sort rows by Unit and then Section for proper reconstruction
+            sorted_edited = sorted(edited, key=lambda x: (int(x['Unit']), x['Section']))
+
+            for row in sorted_edited:
+                unit_num = int(row['Unit'])
+                unit_title = row['Unit Title']
+                section_num = row['Section']
+                section_title = row['Section Title']
+                description = row.get('Description', '') # Use .get for safety
+                
+                if current_unit is None or current_unit['unit_number'] != unit_num:
+                    if current_unit:
+                        approved.append(current_unit)
+                    current_unit = {
+                        'unit_number': unit_num,
+                        'unit_title': unit_title,
+                        'sections': []
+                    }
+                
+                current_unit['sections'].append({
+                    'section_number': section_num,
+                    'section_title': section_title,
+                    'description': description
+                })
+            
+            if current_unit: # Add the last processed unit
+                approved.append(current_unit)
+            
+            st.session_state.approved_outline = approved
+            st.session_state.images = {}  # Reset images
+            st.session_state.image_prompts = {}  # Reset image prompts
+            st.session_state.content = {} # Clear previous content if re-generating
+            st.session_state.content_status = {} # Clear previous content status
+            st.session_state.step = 'content_generation'
+            st.success("✅ Outline approved! Moving to content generation...")
+            time.sleep(1)
+            st.rerun()
+
+# ============================================================================
+# Phase 4 Part 1 Complete
+# ============================================================================
+print("Phase 4 Part 1: UI Pages (Syllabus, Config, Outline) loaded successfully")
+"""
+PHASE 4: USER INTERFACE PAGES (PART 2)
+========================================
+- Content generation page with image uploads
+- Compilation page with download options
+- Sidebar status display
+"""
+
+# ============================================================================
+# SIDEBAR STATUS
+# ============================================================================
+
+def show_sidebar_status():
+    """Enhanced sidebar with navigation and status"""
+    with st.sidebar:
+        st.title("🎓 AI Curriculum Generator")
+        
+        # Status indicators
+        st.caption(f"PDF: {'✅' if REPORTLAB_AVAILABLE else '❌'}")
+        st.caption(f"DOCX: {'✅' if DOCX_AVAILABLE else '❌'}")
+        
+        st.divider()
+
+        st.header("Current Project Status")
+        
+        # Display current step
+        steps = {
+            'syllabus_upload': '1️⃣ Syllabus',
+            'configuration': '2️⃣ Config',
+            'outline_generation': '3️⃣ Outline',
+            'content_generation': '4️⃣ Content',
+            'compilation': '5️⃣ Output'
+        }
+        current_step_name = steps.get(st.session_state.step, "Unknown")
+        st.write(f"**Current Step:** {current_step_name}")
+        
+        if st.session_state.step == 'configuration':
+            pass # No specific status to show here, rely on config page
+        elif st.session_state.step == 'outline_generation':
+            outline_status = "✅ Generated" if st.session_state.outline_generated else "❌ Not Generated"
+            st.write(f"Outline: {outline_status}")
+        elif st.session_state.step == 'content_generation':
+            total_sections = len(st.session_state.sections_to_process) if st.session_state.sections_to_process else 0
+            completed_sections = len(st.session_state.content)
+            progress_pct = (completed_sections / total_sections * 100) if total_sections > 0 else 0
+            st.progress(progress_pct / 100)
+            st.write(f"Content: {completed_sections}/{total_sections} sections ({progress_pct:.0f}%)")
+            if st.session_state.paused:
+                st.warning("Generation is paused")
+        elif st.session_state.step == 'compilation':
+            if st.session_state.compiled_files:
+                num_files = len(st.session_state.compiled_files)
+                st.success(f"{num_files} file(s) ready for download.")
+            else:
+                st.info("Compilation not started yet.")
+
+        st.divider()
+
+        st.caption("© 2024 AI Curriculum Generator")
+
+
+# ============================================================================
+# PAGE 4: CONTENT GENERATION WITH IMAGE UPLOADS
+# ============================================================================
+
+def show_content_generation_page():
+    """Content generation page with image upload and prompt generation"""
+    st.header("✍️ Step 4: Content Generation")
+    
+    if 'approved_outline' not in st.session_state or not st.session_state.approved_outline:
+        st.error("❌ No approved outline found")
+        if st.button("← Back to Outline", key="back_no_outline_gen"):
+            st.session_state.step = 'outline_generation'
+            st.rerun()
+        return
+    
+    # Initialize generation if not already started or if resuming
+    if not st.session_state.content or not st.session_state.content_status:
+        st.session_state.content = {}
+        st.session_state.content_status = {} # Store status per section
+        st.session_state.images = {}
+        st.session_state.image_prompts = {}
+        st.session_state.generation_start_time = time.time()
+        st.session_state.paused = False
+        
+        # Build list of sections to process from approved outline
+        sections_to_process = []
+        for unit in st.session_state.approved_outline:
+            for section in unit.get('sections', []):
+                sections_to_process.append({
+                    'unit_number': unit['unit_number'],
+                    'unit_title': unit['unit_title'],
+                    'section_number': section['section_number'],
+                    'section_title': section['section_title'],
+                    'description': section.get('description', '')
+                })
+        st.session_state.sections_to_process = sections_to_process
+        
+    
+    total = len(st.session_state.sections_to_process)
+    completed = len(st.session_state.content) # Number of successfully generated sections
+    
+    # Progress metrics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("✅ Completed", f"{completed}/{total}")
+    with col2:
+        progress_pct = (completed / total * 100) if total > 0 else 0
+        st.metric("📊 Progress", f"{progress_pct:.0f}%")
+    with col3:
+        st.metric("⏳ Remaining", total - completed)
+    with col4:
+        if completed > 0 and not st.session_state.paused:
+            elapsed = time.time() - st.session_state.generation_start_time
+            avg_time = elapsed / completed
+            eta_seconds = int(avg_time * (total - completed))
+            eta_minutes = eta_seconds // 60
+            st.metric("⏱️ ETA", f"~{eta_minutes}min")
+        else:
+            st.metric("⏱️ ETA", "N/A")
+    
+    # Progress bar
+    st.progress(completed / total if total > 0 else 0)
+    
+    st.divider()
+    
+    # Generate content section by section
+    if completed < total:
+        # Find the next section to process that hasn't been fully generated
+        current_section_data = None
+        for section_data in st.session_state.sections_to_process:
+            sec_key = f"{section_data['section_number']} {section_data['section_title']}"
+            if sec_key not in st.session_state.content:
+                current_section_data = section_data
+                break
+        
+        if not current_section_data:
+            st.error("Internal Error: Could not find next section to process.")
+            return
+
+        section_key = f"{current_section_data['section_number']} {current_section_data['section_title']}"
+        
+        st.subheader(f"🤖 Generating: {section_key}")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info(f"**Unit {current_section_data['unit_number']}:** {current_section_data['unit_title']}")
+            st.write(f"**Description:** {current_section_data['description']}")
+        
+        with col2:
+            if st.button("⏸️ Pause Generation", key="pause_gen", use_container_width=True):
+                st.session_state.paused = True
+                st.rerun()
+        
+        # Generate content if not paused
+        if not st.session_state.paused:
+            with st.spinner(f"✍️ Writing content for section {completed + 1} of {total}... This may take 30-60 seconds"):
+                
+                # Build context
+                context = {
+                    'course_title': st.session_state.course_title,
+                    'course_code': st.session_state.course_code,
+                    'credits': st.session_state.credits,
+                    'target_audience': st.session_state.target_audience,
+                    'program_objectives': st.session_state.program_objectives,
+                    'program_outcomes': st.session_state.program_outcomes,
+                    'course_outcomes': st.session_state.course_outcomes,
+                    'specialized_outcomes': st.session_state.specialized_outcomes,
+                    'learning_objectives': st.session_state.learning_objectives,
+                    'prerequisites': st.session_state.prerequisites,
+                    'assessment_methods': st.session_state.assessment_methods
+                }
+                
+                # Generate content
+                with st.expander("🔍 Content Generation Details", expanded=True):
+                    content = generate_content(current_section_data, context)
+                
+                if content and len(content.strip()) > 100:
+                    st.session_state.content[section_key] = content
+                    st.session_state.content_status[section_key] = "Generated"
+                    st.success(f"✅ Content generated for {section_key}")
+                    
+                    # Show preview
+                    with st.expander("📄 Content Preview", expanded=False):
+                        st.write(content[:500] + "...")
+                    
+                    st.divider()
+                    
+                    # ===== IMAGE SECTION =====
+                    st.subheader("🖼️ Add Image for This Section (Optional)")
+                    
+                    tab1, tab2 = st.tabs(["📤 Upload Image", "🤖 Generate Image Prompt"])
+                    
+                    with tab1:
+                        st.info("💡 Upload a relevant image for this section")
+                        # Use a unique key for each section's uploader
+                        uploaded_image = st.file_uploader(
+                            f"Upload image for {section_key}",
+                            type=['png', 'jpg', 'jpeg'],
+                            key=f"image_upload_{section_key}" # Keyed by section_key
+                        )
+                        
+                        if uploaded_image:
+                            st.session_state.images[section_key] = uploaded_image
+                            st.success("✅ Image uploaded successfully!")
+                            st.image(uploaded_image, caption=section_key, width=300)
+                    
+                    with tab2:
+                        st.info("💡 Generate an AI prompt to create an image for this section")
+                        
+                        # Initialize image prompt if not present
+                        if section_key not in st.session_state.image_prompts:
+                            st.session_state.image_prompts[section_key] = ""
+
+                        if st.button("🤖 Generate Image Prompt", key=f"gen_img_prompt_{section_key}"):
+                            with st.spinner("Generating image prompt..."):
+                                img_prompt = generate_image_prompt_for_section(current_section_data, context)
+                                if img_prompt:
+                                    st.session_state.image_prompts[section_key] = img_prompt
+                                    st.rerun()
+                        
+                        # Display and allow editing of the prompt
+                        if st.session_state.image_prompts.get(section_key):
+                            st.success("✅ Image prompt generated!")
+                            prompt_text = st.text_area(
+                                "Image Generation Prompt (edit if needed):",
+                                value=st.session_state.image_prompts[section_key],
+                                height=150,
+                                key=f"img_prompt_text_{section_key}" # Keyed by section_key
+                            )
+                            # Update session state if prompt text is changed
+                            if prompt_text != st.session_state.image_prompts[section_key]:
+                                st.session_state.image_prompts[section_key] = prompt_text
+                            
+                            st.info("💡 Copy this prompt and use it with DALL-E, Midjourney, or Stable Diffusion to generate an image, then upload it in the 'Upload Image' tab")
+                            
+                            if st.button("📋 Copy Prompt", key=f"copy_prompt_{section_key}"):
+                                st.code(prompt_text)
+                    
+                    st.divider()
+                    
+                    # Continue or skip buttons
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("⏭️ Skip Image & Continue", type="primary", use_container_width=True, key=f"skip_img_{section_key}"):
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                    with col2:
+                        if st.button("✅ Save & Continue", type="primary", use_container_width=True, key=f"continue_{section_key}"):
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                else:
+                    st.error("❌ Content generation failed or returned insufficient content")
+                    st.session_state.content_status[section_key] = "Failed"
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🔄 Retry", type="primary", use_container_width=True, key=f"retry_{section_key}"):
+                            st.rerun()
+                    with col2:
+                        if st.button("⏭️ Skip This Section", use_container_width=True, key=f"skip_section_{section_key}"):
+                            st.session_state.content[section_key] = "[Content generation skipped]"
+                            st.session_state.content_status[section_key] = "Skipped"
+                            st.rerun()
+        else:
+            # Paused state
+            st.warning("⏸️ Content generation paused")
+            st.info(f"Currently at section {completed + 1} of {total}")
+            
+            if st.button("▶️ Resume Generation", type="primary", key="resume_gen"):
+                st.session_state.paused = False
+                st.rerun()
+    
+    else:
+        # All content generated
+        st.success("🎉 All Content Generated Successfully!")
+        
+        total_words = sum(len(c.split()) for c in st.session_state.content.values())
+        est_pages = total_words // 300 + 1 if total_words > 0 else 0
+        images_added = len(st.session_state.images)
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("✅ Completed", f"{completed}/{total}")
+        with col2:
+            st.metric("📊 Progress", "100%")
+        with col3:
+            st.metric("⏳ Remaining", 0)
+        with col4:
+            st.metric("⏱️ ETA", "Done")
+            
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📚 Units", len(st.session_state.approved_outline))
+        with col2:
+            st.metric("📝 Total Sections", total)
+        with col3:
+            st.metric("📄 Est. Pages", f"~{est_pages}")
+        with col4:
+            st.metric("🖼️ Images", images_added)
+        
+        # Show content summary
+        with st.expander("📊 Content Summary", expanded=False):
+            for unit in st.session_state.approved_outline:
+                st.write(f"**Unit {unit['unit_number']}: {unit['unit_title']}**")
+                for section in unit.get('sections', []):
+                    sec_key = f"{section['section_number']} {section['section_title']}"
+                    content_words = len(st.session_state.content.get(sec_key, '').split())
+                    status = st.session_state.content_status.get(sec_key, "Unknown")
+                    has_image = "🖼️" if sec_key in st.session_state.images else ""
+                    st.write(f"  - {sec_key}: {status} ({content_words:,} words) {has_image}")
+        
+        st.divider()
+        
+        # Navigation buttons
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("← Back to Outline", use_container_width=True, key="back_from_gen"):
+                st.session_state.step = 'outline_generation'
+                st.rerun()
+        
+        with col2:
+            if st.button("🔄 Regenerate All", use_container_width=True, key="regen_all"):
+                if st.checkbox("⚠️ Confirm: This will delete all generated content", key="confirm_regen"):
+                    st.session_state.content = {}
+                    st.session_state.content_status = {}
+                    st.session_state.images = {}
+                    st.session_state.image_prompts = {}
+                    st.session_state.generation_start_time = time.time() # Reset timer
+                    st.rerun()
+        
+        with col3:
+            if st.button("📄 Compile Documents →", type="primary", use_container_width=True, key="go_compile"):
+                st.session_state.step = 'compilation'
+                st.rerun()
+
+# ============================================================================
+# PAGE 5: COMPILATION AND DOWNLOAD
+# ============================================================================
+
+def show_compilation_page():
+    """Compilation page with PDF/DOCX generation and direct download"""
+    st.header("📄 Step 5: Compile & Download")
+    
+    # Validation
+    if 'content' not in st.session_state or not st.session_state.content:
+        st.error("❌ No content to compile")
+        if st.button("← Back to Content Generation", key="back_no_content"):
+            st.session_state.step = 'content_generation'
+            st.rerun()
+        return
+    
+    if 'approved_outline' not in st.session_state:
+        st.error("❌ No outline found")
+        if st.button("← Back to Outline", key="back_no_outline_comp"):
+            st.session_state.step = 'outline_generation'
+            st.rerun()
+        return
+    
+    # ========== Summary ==========
+    st.subheader("📊 Content Summary")
+    
+    total_sections = len(st.session_state.content)
+    total_words = sum(len(c.split()) for c in st.session_state.content.values())
+    est_pages = total_words // 300 + 1 if total_words > 0 else 0
+    images_count = len(st.session_state.images)
+    
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("📚 Units", len(st.session_state.approved_outline))
+    with col2:
+        st.metric("📝 Sections", total_sections)
+    with col3:
+        st.metric("📄 Words", f"{total_words:,}")
+    with col4:
+        st.metric("🖼️ Images", images_count)
+    
+    st.info(f"📄 Estimated pages: ~{est_pages}")
+    
+    st.divider()
+    
+    # ========== Compilation Options ==========
+    st.subheader("⚙️ Compilation Options")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        compile_type = st.radio(
+            "What to compile:",
+            ["Separate Unit Files", "Complete Course File", "Both (Separate + Complete)"],
+            index=2, # Default to "Both"
+            key="compile_type",
+            help="Choose whether to compile each unit separately, one complete file, or both"
+        )
+        st.session_state.compile_type = compile_type # Update session state
+    
+    with col2:
+        output_format = st.radio(
+            "Output Format:",
+            ["PDF", "DOCX (Editable)"],
+            index=0, # Default to PDF
+            key="output_format",
+            help="PDF for final documents, DOCX for editable Word files"
+        )
+        st.session_state.output_format = output_format # Update session state
+    
+    
+    st.divider()
+    
+    # ========== Compilation Button ==========
+    if st.button("🔨 Start Compilation", type="primary", use_container_width=True, key="start_compile"):
+        
+        course_info = {
+            'course_title': st.session_state.course_title,
+            'course_code': st.session_state.course_code,
+            'credits': st.session_state.credits,
+            'target_audience': st.session_state.target_audience
+        }
+        
+        
+        compiled_files = {}
+        
+        # ===== Compile Separate Units =====
+        if compile_type in ["Separate Unit Files", "Both (Separate + Complete)"]:
+            st.subheader("📚 Compiling Individual Units")
+            progress_bar_units = st.progress(0)
+            status_text_units = st.empty()
+            
+            for i, unit in enumerate(st.session_state.approved_outline):
+                unit_num = unit['unit_number']
+                # Ensure unit title is present and clean it for filename
+                unit_title = unit.get('unit_title', f"Unit_{unit_num}")
+                safe_unit_title = re.sub(r'[^\w\s-]', '', unit_title).strip()
+                if not safe_unit_title: safe_unit_title = f"Unit_{unit_num}"
+                
+                status_text_units.text(f"Compiling Unit {unit_num}: {safe_unit_title}...")
+                
+                with st.spinner(f"Compiling Unit {unit_num}: {safe_unit_title}..."):
+                    if output_format == "PDF":
+                        file_buffer = compile_unit_pdf(unit, course_info, st.session_state.content)
+                    else:
+                        file_buffer = compile_unit_docx(unit, course_info, st.session_state.content)
+                    
+                    if file_buffer:
+                        ext = '.pdf' if output_format == "PDF" else '.docx'
+                        filename = f"Unit_{unit_num}_{safe_unit_title}{ext}"
+                        mime_type = 'application/pdf' if output_format == "PDF" else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                        
+                        compiled_files[f"unit_{unit_num}"] = {
+                            'buffer': file_buffer,
+                            'filename': filename,
+                            'mime_type': mime_type
+                        }
+                        
+                        
+                        st.success(f"✅ Unit {unit_num} compiled successfully")
+                    else:
+                        st.error(f"❌ Failed to compile Unit {unit_num}")
+                
+                progress_bar_units.progress((i + 1) / len(st.session_state.approved_outline))
+            
+            status_text_units.text("✅ All individual units compiled!")
+        
+        # ===== Compile Complete File =====
+        if compile_type in ["Complete Course File", "Both (Separate + Complete)"]:
+            st.subheader("📖 Compiling Complete Course")
+            
+            with st.spinner("Compiling complete course file..."):
+                if output_format == "PDF":
+                    file_buffer = compile_complete_pdf(
+                        st.session_state.approved_outline,
+                        course_info,
+                        st.session_state.content
+                    )
+                else:
+                    file_buffer = compile_complete_docx(
+                        st.session_state.approved_outline,
+                        course_info,
+                        st.session_state.content
+                    )
+                
+                if file_buffer:
+                    ext = '.pdf' if output_format == "PDF" else '.docx'
+                    # Clean course title for filename
+                    safe_course_title = re.sub(r'[^\w\s-]', '', st.session_state.course_title).strip()
+                    if not safe_course_title: safe_course_title = "Course"
+                    filename = f"Complete_{st.session_state.course_code}_{safe_course_title}{ext}"
+                    mime_type = 'application/pdf' if output_format == "PDF" else 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    
+                    compiled_files['complete'] = {
+                        'buffer': file_buffer,
+                        'filename': filename,
+                        'mime_type': mime_type
+                    }
+                    
+                    
+                    st.success("✅ Complete course compiled successfully")
+                else:
+                    st.error("❌ Failed to compile complete course")
+        
+        # ===== Download Section =====
+        st.divider()
+        st.subheader("📥 Download Files")
+        
+        if compiled_files:
+            st.success(f"✅ {len(compiled_files)} file(s) ready for download")
+            
+            # Display downloads using columns for better layout
+            num_files = len(compiled_files)
+            cols = st.columns(min(3, num_files)) # Max 3 columns for downloads
+            col_index = 0
+
+            # Sort files for consistent display order: complete first, then units numerically
+            sorted_keys = sorted(compiled_files.keys(), key=lambda x: (0 if x == 'complete' else 1, int(x.split('_')[1]) if x.startswith('unit_') else 0))
+            
+            for key in sorted_keys:
+                file_data = compiled_files[key]
+                with cols[col_index % len(cols)]:
+                    st.write("---") # Separator for each download button block
+                    st.write(f"📄 {file_data['filename']}")
+                    file_size = len(file_data['buffer'].getvalue()) / 1024  # KB
+                    st.caption(f"Size: {file_size:.1f} KB")
+                    
+                    file_data['buffer'].seek(0) # Ensure buffer is at the beginning for download
+                    st.download_button(
+                        label="⬇️ Download",
+                        data=file_data['buffer'].getvalue(),
+                        file_name=file_data['filename'],
+                        mime=file_data['mime_type'],
+                        key=f"download_{key}_{output_format}", # Unique key
+                        use_container_width=True
+                    )
+                col_index += 1
+        else:
+            st.warning("⚠️ No files were compiled")
+        
+        st.divider()
+        
+        # Navigation
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("← Back to Content", key="back_to_content_comp"):
+                st.session_state.step = 'content_generation'
+                st.rerun()
+        with col2:
+            if st.button("🔄 Compile Again", key="compile_again"):
+                st.rerun()
+        with col3:
+            if st.button("🏠 New Project", key="new_proj"):
+                # Save important data that should persist if the user starts a new project
+                persistent_data = {
+                    'api_key': st.session_state.api_key,
+                }
+                
+                # Clear everything
+                for key in list(st.session_state.keys()):
+                    del st.session_state[key]
+                
+                # Reinitialize and restore persistent data
+                initialize_session_state()
+                for key, value in persistent_data.items():
+                    st.session_state[key] = value
+                
+                st.success("✅ Ready for new project!")
+                time.sleep(1)
+                st.rerun()
+
+
+# ============================================================================
+# PHASE 4 PART 2 COMPLETE
+# ============================================================================
+print("Phase 4 Part 2: Content Generation, Compilation, and Sidebar loaded successfully")
+
+
+# ============================================================================
+# MAIN APPLICATION
+# ============================================================================
+
+def main():
+    """Main application entry point"""
+    
+    # Page configuration
+    st.set_page_config(
+        page_title="AI Curriculum Generator",
+        page_icon="🎓",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Title and description
+    st.title("🎓 AI Curriculum Generator")
+    st.caption("Professional academic materials with eGyankosh standards | Powered by Grok AI")
+    
+    # Initialize session state
+    initialize_session_state()
+    
+    # Show navigation
+    show_navigation()
+    
+    # Route to appropriate page based on current step
+    step = st.session_state.step
+    
+    if step == 'syllabus_upload':
+        show_syllabus_upload_page()
+    
+    elif step == 'configuration':
+        show_configuration_page()
+    
+    elif step == 'outline_generation':
+        show_outline_page()
+    
+    elif step == 'content_generation':
+        show_content_generation_page()
+    
+    elif step == 'compilation':
+        show_compilation_page()
+    
+    else:
+        st.error(f"❌ Unknown step: {step}")
+        st.session_state.step = 'configuration' # Default to configuration
+        st.rerun()
+    
+    # Show sidebar status
+    show_sidebar_status()
+    
+    # Footer
+    st.divider()
+    with st.expander("ℹ️ About This Application", expanded=False):
+        st.markdown("""
+        ### AI Curriculum Generator
+        
+        **Features:**
+        - PDF syllabus extraction
+        - AI-powered content generation
+        - Image upload and prompt generation
+        - Professional PDF/DOCX compilation
+        - Fixed LaTeX equation rendering
+        
+        **Technologies:**
+        - Grok AI (grok-2-1212)
+        - ReportLab (PDF generation)
+        - python-docx (DOCX generation)
+        - PyPDF2 (PDF text extraction)
+        - PIL (Image processing)
+        
+        **Content Generation:**
+        - Learning objectives and outcomes
+        - Detailed explanations with examples
+        - Practice problems and solutions
+        - Case studies and real-world applications
+        - Assessment questions
+        - LaTeX equation support (using $$...$$ format)
+        
+        **Output Formats:**
+        - PDF (professional, print-ready)
+        - DOCX (editable Word documents)
+        - Separate files per unit or complete course file
+        - Direct browser download
+        
+        **Quality Features:**
+        - Comprehensive error handling
+        - Progress tracking
+        - Content validation
+        - Image integration
+        - Professional formatting
+        - Academic structure
+        
+        **Usage:**
+        1. Configure course details (title, code, audience, etc.)
+        2. Optional: Upload reference PDF for context
+        3. Generate and approve course outline
+        4. Generate content for each section
+        5. Generate image prompts for visual content
+        6. Compile and download final documents
+        
+        **Requirements:**
+        pip install streamlit requests pillow reportlab python-docx pypdf2
+        
+        Note: Make sure all required packages are installed for full functionality.
+        """)
+
+# ============================================================================
+# APPLICATION ENTRY POINT
+# ============================================================================
+
+if __name__ == "__main__":
+    main()
+
+# ============================================================================
+# INSTALLATION REQUIREMENTS
+# ============================================================================
+"""
+Required packages - install with pip:
+
+pip install streamlit
+pip install requests
+pip install pillow
+pip install PyPDF2
+pip install reportlab
+pip install python-docx
+
+Or use requirements.txt:
+
+streamlit>=1.29.0
+requests>=2.31.0
+pillow>=10.0.0
+PyPDF2>=3.0.0
+reportlab>=4.0.0
+python-docx>=1.1.0
+"""
+
+# ============================================================================
+# HOW TO RUN
+# ============================================================================
+"""
+1. Save all phases to a single file named 'curriculum_generator.py':
+   - Copy Phase 1 content
+   - Copy Phase 2 content
+   - Copy Phase 3 content
+   - Copy Phase 4 Part 1 content
+   - Copy Phase 4 Part 2 content
+   - Copy This file: Main Application
+
+2. Install requirements:
+   pip install -r requirements.txt
+
+3. Run the application:
+   streamlit run curriculum_generator.py
+
+4. Open browser at:
+   http://localhost:8501
+"""
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+"""
+Common Issues and Solutions:
+
+1. **LaTeX equations not rendering:**
+   - Fixed! Now converts LaTeX to Unicode symbols
+   - Example: \\leq becomes ≤
+
+2. **API errors:**
+   - Check API key starts with 'xai-'
+   - Test API using the test button
+   - Check internet connection
+
+3. **PDF compilation fails:**
+   - Check ReportLab is installed
+   - Try DOCX format instead
+   - Check error logs in UI
+
+4. **Images not appearing:**
+   - Ensure images are PNG/JPG/JPEG
+   - Check file size < 5MB
+   - Upload one image at a time
+
+5. **Content too short:**
+   - Check API logs in UI
+   - Increase max_tokens if needed
+   - Check API rate limits
+"""
+
+# ============================================================================
+# COMPLETE APPLICATION - READY TO USE
+# ============================================================================
+print("✅ All components loaded successfully!")
+print("🎓 AI Curriculum Generator ready!")
+print("🚀 Run with: streamlit run curriculum_generator.py")
