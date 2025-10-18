@@ -1322,7 +1322,7 @@ def compile_unit_docx(unit_data, course_info, content_dict):
             
             p = doc.add_paragraph()
             
-            # Basic handling for bold (**) and italics (*)
+            # Basic markdown handling for bold (**) and italics (*)
             parts = re.split(r'(\*\*.+?\*\*|\*.+?\*)', line)
             
             for part in parts:
@@ -2952,4 +2952,6 @@ Common Issues and Solutions:
 print("✅ All components loaded successfully!")
 print("🎓 AI Curriculum Generator ready!")
 print("🚀 Run with: streamlit run curriculum_generator.py")
- streamlit run curriculum_generator.py")
+
+if __name__ == "__main__":
+    main()
