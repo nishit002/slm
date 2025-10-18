@@ -1,14 +1,6 @@
 """
 COMPLETE AI CURRICULUM GENERATOR - FULLY FIXED VERSION
 ========================================================
-Phase 1: Imports and Configuration
-
-Features:
-- Fixed LaTeX equation rendering
-- Image generation prompts and upload
-- Enhanced error handling
-- Complete academic content generation
-- Direct download for PDF/DOCX files
 """
 
 import streamlit as st
@@ -135,12 +127,6 @@ def initialize_session_state():
 # ============================================================================
 print("Phase 1: Imports and Configuration loaded successfully")
 """
-PHASE 2: HELPER FUNCTIONS
-==========================
-- API communication with detailed logging
-- PDF extraction and syllabus parsing
-- LaTeX equation handling (FIXED)
-- Text cleaning and formatting
 """
 
 # ============================================================================
@@ -469,13 +455,6 @@ def clean_text_for_pdf(text):
 # ============================================================================
 print("Phase 2: Helper Functions loaded successfully")
 """
-PHASE 3: CONTENT GENERATION AND COMPILATION
-============================================
-- AI content generation with image prompts
-- Outline generation
-- PDF compilation with images and LaTeX support
-- DOCX compilation with images
-- Header/footer with logo support
 """
 
 # ============================================================================
@@ -1434,12 +1413,6 @@ def compile_complete_docx(outline, course_info, content_dict):
 # ============================================================================
 print("Phase 3: Content Generation and Compilation loaded successfully")
 """
-PHASE 4: USER INTERFACE PAGES (PART 1)
-========================================
-- Syllabus upload page
-- Configuration page with PEO/PO/CO/PSO
-- Outline generation page
-- Navigation system
 """
 
 # ============================================================================
