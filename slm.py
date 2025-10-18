@@ -2245,12 +2245,15 @@ def show_content_generation_page():
             current_section_data = section_data
             break
     
-    if not current_section_data and completed_sections == total_sections_to_process:
-        # This case should be handled by the "All Content Generated Successfully!" block below
-        pass 
-    elif not current_section_data:
-        st.error("Internal Error: Could not find next section to process, but not all sections are marked as complete.")
-        return
+    # CHANGE START
+    if not current_section_data:
+        if completed_sections == total_sections_to_process:
+            # All sections are complete - this is handled by the success block below
+            return
+        else:
+            st.error("Internal Error: Could not find next section to process, but not all sections are marked as complete.")
+            return
+    # CHANGE END
 
     section_key = f"{current_section_data['section_number']} {current_section_data['section_title']}"
     
@@ -2949,3 +2952,4 @@ Common Issues and Solutions:
 print("✅ All components loaded successfully!")
 print("🎓 AI Curriculum Generator ready!")
 print("🚀 Run with: streamlit run curriculum_generator.py")
+ streamlit run curriculum_generator.py")
