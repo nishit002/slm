@@ -11,3 +11,5 @@ PyPDF2
 python-docx
 Pillow
 requests
+reportlab
+python-docx
