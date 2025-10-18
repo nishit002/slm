@@ -2690,76 +2690,7 @@ if __name__ == "__main__":
 # INSTALLATION REQUIREMENTS
 # ============================================================================
 """
-Required packages - install with pip:
 
-pip install streamlit
-pip install requests
-pip install pillow
-pip install PyPDF2
-pip install reportlab
-pip install python-docx
-
-Or use requirements.txt:
-
-streamlit>=1.29.0
-requests>=2.31.0
-pillow>=10.0.0
-PyPDF2>=3.0.0
-reportlab>=4.0.0
-python-docx>=1.1.0
-"""
-
-# ============================================================================
-# HOW TO RUN
-# ============================================================================
-"""
-1. Save all phases to a single file named 'curriculum_generator.py':
-   - Copy Phase 1 content
-   - Copy Phase 2 content
-   - Copy Phase 3 content
-   - Copy Phase 4 Part 1 content
-   - Copy Phase 4 Part 2 content
-   - Copy This file: Main Application
-
-2. Install requirements:
-   pip install -r requirements.txt
-
-3. Run the application:
-   streamlit run curriculum_generator.py
-
-4. Open browser at:
-   http://localhost:8501
-"""
-
-# ============================================================================
-# TROUBLESHOOTING
-# ============================================================================
-"""
-Common Issues and Solutions:
-
-1. **LaTeX equations not rendering:**
-   - Fixed! Now converts LaTeX to Unicode symbols
-   - Example: \\leq becomes ≤
-
-2. **API errors:**
-   - Check API key starts with 'xai-'
-   - Test API using the test button
-   - Check internet connection
-
-3. **PDF compilation fails:**
-   - Check ReportLab is installed
-   - Try DOCX format instead
-   - Check error logs in UI
-
-4. **Images not appearing:**
-   - Ensure images are PNG/JPG/JPEG
-   - Check file size < 5MB
-   - Upload one image at a time
-
-5. **Content too short:**
-   - Check API logs in UI
-   - Increase max_tokens if needed
-   - Check API rate limits
 """
 
 # ============================================================================
