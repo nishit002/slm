@@ -1,6 +1,14 @@
 """
 COMPLETE AI CURRICULUM GENERATOR - FULLY FIXED VERSION
 ========================================================
+Phase 1: Imports and Configuration
+
+Features:
+- Fixed LaTeX equation rendering
+- Image generation prompts and upload
+- Enhanced error handling
+- Complete academic content generation
+- Direct download for PDF/DOCX files
 """
 
 import streamlit as st
@@ -127,6 +135,12 @@ def initialize_session_state():
 # ============================================================================
 print("Phase 1: Imports and Configuration loaded successfully")
 """
+PHASE 2: HELPER FUNCTIONS
+==========================
+- API communication with detailed logging
+- PDF extraction and syllabus parsing
+- LaTeX equation handling (FIXED)
+- Text cleaning and formatting
 """
 
 # ============================================================================
@@ -455,6 +469,13 @@ def clean_text_for_pdf(text):
 # ============================================================================
 print("Phase 2: Helper Functions loaded successfully")
 """
+PHASE 3: CONTENT GENERATION AND COMPILATION
+============================================
+- AI content generation with image prompts
+- Outline generation
+- PDF compilation with images and LaTeX support
+- DOCX compilation with images
+- Header/footer with logo support
 """
 
 # ============================================================================
@@ -1413,6 +1434,12 @@ def compile_complete_docx(outline, course_info, content_dict):
 # ============================================================================
 print("Phase 3: Content Generation and Compilation loaded successfully")
 """
+PHASE 4: USER INTERFACE PAGES (PART 1)
+========================================
+- Syllabus upload page
+- Configuration page with PEO/PO/CO/PSO
+- Outline generation page
+- Navigation system
 """
 
 # ============================================================================
@@ -2003,6 +2030,11 @@ def show_outline_page():
 # ============================================================================
 print("Phase 4 Part 1: UI Pages (Syllabus, Config, Outline) loaded successfully")
 """
+PHASE 4: USER INTERFACE PAGES (PART 2)
+========================================
+- Content generation page with image uploads
+- Compilation page with download options
+- Sidebar status display
 """
 
 # ============================================================================
@@ -2690,7 +2722,76 @@ if __name__ == "__main__":
 # INSTALLATION REQUIREMENTS
 # ============================================================================
 """
+Required packages - install with pip:
 
+pip install streamlit
+pip install requests
+pip install pillow
+pip install PyPDF2
+pip install reportlab
+pip install python-docx
+
+Or use requirements.txt:
+
+streamlit>=1.29.0
+requests>=2.31.0
+pillow>=10.0.0
+PyPDF2>=3.0.0
+reportlab>=4.0.0
+python-docx>=1.1.0
+"""
+
+# ============================================================================
+# HOW TO RUN
+# ============================================================================
+"""
+1. Save all phases to a single file named 'curriculum_generator.py':
+   - Copy Phase 1 content
+   - Copy Phase 2 content
+   - Copy Phase 3 content
+   - Copy Phase 4 Part 1 content
+   - Copy Phase 4 Part 2 content
+   - Copy This file: Main Application
+
+2. Install requirements:
+   pip install -r requirements.txt
+
+3. Run the application:
+   streamlit run curriculum_generator.py
+
+4. Open browser at:
+   http://localhost:8501
+"""
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+"""
+Common Issues and Solutions:
+
+1. **LaTeX equations not rendering:**
+   - Fixed! Now converts LaTeX to Unicode symbols
+   - Example: \\leq becomes ≤
+
+2. **API errors:**
+   - Check API key starts with 'xai-'
+   - Test API using the test button
+   - Check internet connection
+
+3. **PDF compilation fails:**
+   - Check ReportLab is installed
+   - Try DOCX format instead
+   - Check error logs in UI
+
+4. **Images not appearing:**
+   - Ensure images are PNG/JPG/JPEG
+   - Check file size < 5MB
+   - Upload one image at a time
+
+5. **Content too short:**
+   - Check API logs in UI
+   - Increase max_tokens if needed
+   - Check API rate limits
 """
 
 # ============================================================================
